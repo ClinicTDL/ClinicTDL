@@ -22,6 +22,9 @@ if (!SUPABASE_STORAGE_URL || !SUPABASE_STORAGE_KEY) {
 }
 
 export const supabaseDb = createClient(SUPABASE_DB_URL, SUPABASE_DB_KEY)
-export const supabaseStorage = createClient(SUPABASE_STORAGE_URL, SUPABASE_STORAGE_KEY)
+export const HAS_STORAGE_ENV = !!(SUPABASE_STORAGE_URL && SUPABASE_STORAGE_KEY)
+export const supabaseStorage = HAS_STORAGE_ENV
+  ? createClient(SUPABASE_STORAGE_URL, SUPABASE_STORAGE_KEY)
+  : null
 export const supabase = supabaseDb
 export const STORAGE_BUCKET = sanitize(import.meta.env.VITE_SUPABASE_BUCKET) || 'patient-photos'
