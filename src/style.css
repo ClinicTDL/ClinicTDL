@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "SF Thonburi", system-ui, sans-serif;
+  --color-clinic-light: #f5f9ff;
+  --color-clinic-blue: #1d4ed8;
+  --color-clinic-border: #dbeafe;
+}
+
+@font-face {
+  font-family: "SF Thonburi";
+  src: url("./assets/fonts/SF-Thonburi.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+body {
+  @apply font-sans bg-white text-slate-900;
+}
+
+*::-webkit-scrollbar {
+  width: 2px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background-color: #475569;
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: #64748b;
+}
+
+:root {
+  color-scheme: light;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.dark {
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+}

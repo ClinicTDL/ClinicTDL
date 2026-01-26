@@ -1,0 +1,77 @@
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/system_users?select=id%2Cusername%2Cfull_name%2Cemployee_id%2Crole&order=username.asc:1  Failed to load resource: the server responded with a status of 400 ()
+SystemUsersPage.vue:18 Load users error Object
+loadUsers @ SystemUsersPage.vue:18
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/system_users?select=id%2Cusername%2Cfull_name%2Cemployee_id%2Crole&order=username.asc:1  Failed to load resource: the server responded with a status of 400 ()
+SystemUsersPage.vue:18 Load users error Object
+loadUsers @ SystemUsersPage.vue:18
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/system_users?select=id%2Cusername%2Cfull_name%2Cemployee_id%2Crole&order=username.asc:1  Failed to load resource: the server responded with a status of 400 ()
+SystemUsersPage.vue:18 Load users error Object
+loadUsers @ SystemUsersPage.vue:18
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/system_users?select=id%2Cusername%2Cfull_name%2Cemployee_id%2Crole&order=username.asc:1  Failed to load resource: the server responded with a status of 400 ()
+SystemUsersPage.vue:18 Load users error Object
+loadUsers @ SystemUsersPage.vue:18
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100:1  Failed to load resource: the server responded with a status of 400 ()
+TreatmentHistoryPage.vue:26 Load history error Object
+loadHistory @ TreatmentHistoryPage.vue:26
+defyvntymvoshsomvsrr.supabase.co/rest/v1/system_users?select=id%2Cusername%2Cfull_name%2Cemployee_id%2Crole&order=username.asc:1  Failed to load resource: the server responded with a status of 400 ()
+SystemUsersPage.vue:18 Load users error Object
+loadUsers @ SystemUsersPage.vue:18
+@supabase_supabase-js.js?v=95013b87:11482  GET https://defyvntymvoshsomvsrr.supabase.co/rest/v1/checkups?select=id%2Cemployee_id%2Cmain_symptom%2Cdepartment%2Ccreated_at&order=created_at.desc&limit=100 400 (Bad Request)
+(anonymous) @ @supabase_supabase-js.js?v=95013b87:11482
+(anonymous) @ @supabase_supabase-js.js?v=95013b87:11496
+await in (anonymous)
+then @ @supabase_supabase-js.js?v=95013b87:309
+TreatmentHistoryPage.vue:26 Load history error {code: '42703', details: null, hint: null, message: 'column checkups.main_symptom does not exist'}
+loadHistory @ TreatmentHistoryPage.vue:26
+await in loadHistory
+(anonymous) @ chunk-DUJS4OLK.js?v=95013b87:5221
+callWithErrorHandling @ chunk-DUJS4OLK.js?v=95013b87:2342
+callWithAsyncErrorHandling @ chunk-DUJS4OLK.js?v=95013b87:2349
+hook.__weh.hook.__weh @ chunk-DUJS4OLK.js?v=95013b87:5201
+flushPostFlushCbs @ chunk-DUJS4OLK.js?v=95013b87:2527
+flushJobs @ chunk-DUJS4OLK.js?v=95013b87:2569
+Promise.then
+queueFlush @ chunk-DUJS4OLK.js?v=95013b87:2464
+queuePostFlushCb @ chunk-DUJS4OLK.js?v=95013b87:2478
+queueEffectWithSuspense @ chunk-DUJS4OLK.js?v=95013b87:9614
+baseWatchOptions.scheduler @ chunk-DUJS4OLK.js?v=95013b87:3031
+effect2.scheduler @ chunk-DUJS4OLK.js?v=95013b87:2088
+trigger @ chunk-DUJS4OLK.js?v=95013b87:533
+endBatch @ chunk-DUJS4OLK.js?v=95013b87:591
+notify @ chunk-DUJS4OLK.js?v=95013b87:853
+trigger @ chunk-DUJS4OLK.js?v=95013b87:827
+set value @ chunk-DUJS4OLK.js?v=95013b87:1734
+finalizeNavigation @ vue-router.js?v=95013b87:2213
+(anonymous) @ vue-router.js?v=95013b87:2151
+Promise.then
+pushWithRedirect @ vue-router.js?v=95013b87:2138
+push @ vue-router.js?v=95013b87:2089
+navigate @ LayoutSidebar.vue:19
+onClick @ LayoutSidebar.vue:48
+callWithErrorHandling @ chunk-DUJS4OLK.js?v=95013b87:2342
+callWithAsyncErrorHandling @ chunk-DUJS4OLK.js?v=95013b87:2349
+invoker @ chunk-DUJS4OLK.js?v=95013b87:11425
