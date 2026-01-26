@@ -281,18 +281,14 @@ const uploadPhotoToServer = async () => {
   try {
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const name = `checkup-${employeeCode.value || 'unknown'}-${ts}.jpg`
-    const mimeMatch = String(photoDataUrl.value).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/)
-    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg'
-    const blob = await (await fetch(photoDataUrl.value)).blob()
-    const path = name
-    const { data: upRes, error: upErr } = await supabaseStorage.storage
-      .from(STORAGE_BUCKET)
-      .upload(path, blob, { contentType: mimeType, upsert: true })
-    if (upErr) throw upErr
-    const { data: pub } = await supabaseStorage.storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(path)
-    return pub?.publicUrl || upRes?.path || path
+    const res = await fetch('/api/upload-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageDataUrl: photoDataUrl.value, fileName: name }),
+    })
+    const json = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(json?.error || 'Upload failed')
+    return json?.webViewLink || json?.id || name
   } catch (err) {
     console.error('Photo upload error', err)
     return null
