@@ -1,8 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'patient-photos'
+const sanitize = (v) =>
+  typeof v === 'string' ? v.trim().replace(/^`|`$/g, '') : v
+
+const SUPABASE_URL = sanitize(process.env.SUPABASE_URL)
+const SUPABASE_SERVICE_ROLE_KEY = sanitize(process.env.SUPABASE_SERVICE_ROLE_KEY)
+const SUPABASE_BUCKET = sanitize(process.env.SUPABASE_BUCKET) || 'patient-photos'
 
 // Initialize Supabase Client
 let supabaseAdmin = null
@@ -34,6 +37,15 @@ export default async function handler(req, res) {
   }
 
   try {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      const missing = []
+      if (!SUPABASE_URL) missing.push('SUPABASE_URL')
+      if (!SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY')
+      return res
+        .status(500)
+        .json({ error: 'Server configuration error: Supabase not connected', details: { missing } })
+    }
+
     const { imageDataUrl, fileName } = req.body || {}
     if (!imageDataUrl) {
       return res.status(400).json({ error: 'imageDataUrl is required' })
