@@ -282,13 +282,47 @@ const uploadPhotoToServer = async () => {
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const name = `checkup-${employeeCode.value || 'unknown'}-${ts}.jpg`
     if (supabaseStorage) {
-      const mimeMatch = String(photoDataUrl.value).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/)
-      const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg'
-      const blob = await (await fetch(photoDataUrl.value)).blob()
+      const compressDataUrl = async (dataUrl, maxBytes = 512 * 1024) => {
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image()
+          i.onload = () => resolve(i)
+          i.onerror = reject
+          i.src = dataUrl
+        })
+        const ow = img.naturalWidth || img.width || 1280
+        const oh = img.naturalHeight || img.height || 720
+        const ratios = [1, 0.85, 0.7, 0.6, 0.5]
+        const qualities = [0.85, 0.7, 0.6, 0.5, 0.4]
+        for (const r of ratios) {
+          const cw = Math.max(1, Math.round(ow * r))
+          const ch = Math.max(1, Math.round(oh * r))
+          const canvas = document.createElement('canvas')
+          canvas.width = cw
+          canvas.height = ch
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0, cw, ch)
+          for (const q of qualities) {
+            const blob = await new Promise((resolve) =>
+              canvas.toBlob(resolve, 'image/jpeg', q),
+            )
+            if (blob && blob.size <= maxBytes) return { blob, mime: 'image/jpeg' }
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(ow * 0.5))
+        canvas.height = Math.max(1, Math.round(oh * 0.5))
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        const blob = await new Promise((resolve) =>
+          canvas.toBlob(resolve, 'image/jpeg', 0.4),
+        )
+        return { blob, mime: 'image/jpeg' }
+      }
+      const { blob, mime } = await compressDataUrl(photoDataUrl.value, 512 * 1024)
       const path = name
       const { data: upRes, error: upErr } = await supabaseStorage.storage
         .from(STORAGE_BUCKET)
-        .upload(path, blob, { contentType: mimeType, upsert: true })
+        .upload(path, blob, { contentType: mime, upsert: true })
       if (upErr) throw upErr
       const { data: pub } = await supabaseStorage.storage
         .from(STORAGE_BUCKET)
