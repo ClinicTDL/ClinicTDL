@@ -215,8 +215,9 @@ const stopCamera = () => {
 }
 
 const capturePhoto = () => {
-  if (!videoRef.value || !canvasRef.value) return
+  if (!capturing.value || !videoRef.value || !canvasRef.value || !mediaStream) return
   const video = videoRef.value
+  if (!video.videoWidth || !video.videoHeight) return
   const canvas = canvasRef.value
   canvas.width = video.videoWidth
   canvas.height = video.videoHeight
@@ -769,7 +770,9 @@ watch([leaveStart, leaveEnd], () => {
 
           <button
             type="button"
-            class="w-full inline-flex items-center justify-center gap-1 rounded-lg bg-clinic-blue text-white px-2 py-1.5 text-xs hover:bg-blue-700"
+            :disabled="!capturing"
+            class="w-full inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs"
+            :class="capturing ? 'bg-clinic-blue text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'"
             @click="capturePhoto"
           >
             <i class="fa-solid fa-circle-dot"></i>
