@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
 import { supabase, supabaseStorage, STORAGE_BUCKET } from '../supabaseClient'
-
+import { showToast, showConfirm } from '../stores/ui'
 const employeeCode = ref('')
 const employeeInfo = ref(null)
 const loadingEmployee = ref(false)
@@ -33,7 +33,6 @@ const cameraError = ref('')
 const fileInputRef = ref(null)
 const availableCameras = ref([])
 const selectedCameraId = ref('')
-const toasts = ref([])
 const isSecureCameraAllowed = () => {
   const host = location.hostname
   return (
@@ -283,7 +282,7 @@ const uploadPhotoToServer = async () => {
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const name = `checkup-${employeeCode.value || 'unknown'}-${ts}.jpg`
     if (supabaseStorage) {
-      const compressDataUrl = async (dataUrl, maxBytes = 512 * 1024) => {
+      const compressDataUrl = async (dataUrl, maxBytes = 100 * 1024) => {
         const img = await new Promise((resolve, reject) => {
           const i = new Image()
           i.onload = () => resolve(i)
@@ -319,7 +318,7 @@ const uploadPhotoToServer = async () => {
         )
         return { blob, mime: 'image/jpeg' }
       }
-      const { blob, mime } = await compressDataUrl(photoDataUrl.value, 512 * 1024)
+      const { blob, mime } = await compressDataUrl(photoDataUrl.value, 100 * 1024)
       const path = name
       const { data: upRes, error: upErr } = await supabaseStorage.storage
         .from(STORAGE_BUCKET)
@@ -369,7 +368,11 @@ const saveCheckup = async () => {
     !totalLeaveDays.value ||
     !clinicLocation.value
   if (optionalEmpty || !selectedItems.value.length) {
-    const ok = confirm('ข้อมูลไม่ครบ ต้องการบันทึกหรือไม่')
+    const ok = await showConfirm({
+      title: 'ยืนยันการบันทึก',
+      message: 'ข้อมูลไม่ครบ ต้องการบันทึกหรือไม่',
+      type: 'info',
+    })
     if (!ok) return
   }
 
@@ -504,14 +507,6 @@ onMounted(() => {
   refreshCameras()
 })
 
-const showToast = (type, text, timeout = 3000) => {
-  const id = Date.now() + Math.random()
-  toasts.value.push({ id, type, text })
-  setTimeout(() => {
-    toasts.value = toasts.value.filter((t) => t.id !== id)
-  }, timeout)
-}
-
 watch([leaveStart, leaveEnd], () => {
   const s = leaveStart.value
   const e = leaveEnd.value
@@ -533,16 +528,6 @@ watch([leaveStart, leaveEnd], () => {
 
 <template>
   <div class="space-y-4">
-    <div class="fixed top-4 right-4 z-50 space-y-2">
-      <div
-        v-for="t in toasts"
-        :key="t.id"
-        class="min-w-[220px] rounded-lg px-3 py-2 text-xs shadow-lg"
-        :class="t.type === 'success' ? 'bg-emerald-600 text-white' : t.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'"
-      >
-        {{ t.text }}
-      </div>
-    </div>
     <h1 class="text-xl font-semibold text-slate-900 dark:text-white">
       Medical Checkup & Dispensing
     </h1>

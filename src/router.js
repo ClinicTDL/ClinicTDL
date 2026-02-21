@@ -8,6 +8,7 @@ import TreatmentHistoryPage from './views/TreatmentHistoryPage.vue'
 import DispensingHistoryPage from './views/DispensingHistoryPage.vue'
 import ImportHistoryPage from './views/ImportHistoryPage.vue'
 import SystemUsersPage from './views/SystemUsersPage.vue'
+import EmployeeList from './views/EmployeeList.vue'
 
 const routes = [
   {
@@ -27,6 +28,7 @@ const routes = [
       { path: 'dispensing-history', name: 'dispensing-history', component: DispensingHistoryPage },
       { path: 'import-history', name: 'import-history', component: ImportHistoryPage },
       { path: 'system-users', name: 'system-users', component: SystemUsersPage },
+      { path: 'employee-list', name: 'employee-list', component: EmployeeList },
     ],
   },
 ]
