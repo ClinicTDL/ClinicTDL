@@ -8,6 +8,8 @@ const rawRecords = ref([])
 const search = ref('')
 const department = ref('')
 const departments = ref([])
+const dateStart = ref('')
+const dateEnd = ref('')
 
 const fetchDepartments = async () => {
   const { data } = await supabase.from('employees').select('department').limit(5000)
@@ -63,7 +65,12 @@ const loadData = async () => {
 const filtered = computed(() => {
   const s = (search.value || '').toLowerCase()
   const dep = (department.value || '').toString()
+  const ds = (dateStart.value || '').toString()
+  const de = (dateEnd.value || '').toString()
   return rawRecords.value.filter((r) => {
+    const created = (r.created_at || '').slice(0, 10)
+    if (ds && created < ds) return false
+    if (de && created > de) return false
     if (dep && r.department !== dep) return false
     if (!s) return true
     return (
@@ -105,18 +112,12 @@ const exportExcel = async () => {
       const total = used + Number(m.current_stock || 0)
       sheet1.push([m.name || '-', total, m.unit || '-', used, Number(m.current_stock || 0)])
     }
-    const groups = {}
     const rows = [...filtered.value].sort((a, b) => {
       if (a.medicine_name === b.medicine_name) return new Date(a.created_at) - new Date(b.created_at)
       return a.medicine_name.localeCompare(b.medicine_name)
     })
     const sheet2 = [['วันที่', 'รหัสพนักงาน', 'ชื่อ-นามสกุล', 'แผนก', 'ชื่อยา', 'จำนวน', 'คนจ่ายยา']]
-    let currentGroup = ''
     for (const r of rows) {
-      if (r.medicine_name !== currentGroup) {
-        currentGroup = r.medicine_name
-        sheet2.push([currentGroup, '', '', '', '', '', ''])
-      }
       sheet2.push([
         new Date(r.created_at).toLocaleDateString('th-TH'),
         r.employee_code,
@@ -142,6 +143,8 @@ const exportExcel = async () => {
 
 watch(search, () => {})
 watch(department, () => {})
+watch(dateStart, () => {})
+watch(dateEnd, () => {})
 
 onMounted(async () => {
   await Promise.all([fetchDepartments(), loadData()])
@@ -164,7 +167,7 @@ onMounted(async () => {
       </button>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
       <div class="flex items-center gap-2">
         <label class="text-xs text-slate-600 dark:text-slate-300">ค้นหา</label>
         <input
@@ -183,6 +186,22 @@ onMounted(async () => {
           <option value="">ทั้งหมด</option>
           <option v-for="d in departments" :key="d" :value="d">{{ d }}</option>
         </select>
+      </div>
+      <div class="flex flex-col md:flex-row md:items-center gap-1 md:gap-2">
+        <label class="text-xs text-slate-600 dark:text-slate-300">ช่วงวันที่</label>
+        <div class="flex items-center gap-1">
+          <input
+            v-model="dateStart"
+            type="date"
+            class="rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+          />
+          <span class="text-xs text-slate-500">ถึง</span>
+          <input
+            v-model="dateEnd"
+            type="date"
+            class="rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+          />
+        </div>
       </div>
       <div class="flex items-center justify-end">
         <div class="text-xs text-slate-600 dark:text-slate-300">

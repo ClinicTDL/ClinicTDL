@@ -583,6 +583,7 @@ watch([leaveStart, leaveEnd], () => {
               :value="employeeInfo?.fullname || ''"
               type="text"
               disabled
+              placeholder="ชื่อ-นามสกุล"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-xs"
             />
           </div>
@@ -594,6 +595,7 @@ watch([leaveStart, leaveEnd], () => {
               :value="employeeInfo?.status || ''"
               type="text"
               disabled
+              placeholder="พนักงาน, ลาออก, ฯลฯ"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-xs"
             />
           </div>
@@ -618,6 +620,7 @@ watch([leaveStart, leaveEnd], () => {
               :value="employeeInfo?.department || ''"
               type="text"
               disabled
+              placeholder="แผนก"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-xs"
             />
           </div>
@@ -627,6 +630,7 @@ watch([leaveStart, leaveEnd], () => {
               :value="employeeInfo?.project || ''"
               type="text"
               disabled
+              placeholder="โครงการ"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 text-xs"
             />
           </div>
@@ -661,6 +665,7 @@ watch([leaveStart, leaveEnd], () => {
             <textarea
               v-model="symptoms"
               rows="3"
+              placeholder="อาการ"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             ></textarea>
           </div>
@@ -669,6 +674,7 @@ watch([leaveStart, leaveEnd], () => {
             <textarea
               v-model="diagnosis"
               rows="3"
+              placeholder="วินิจฉัย"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             ></textarea>
           </div>

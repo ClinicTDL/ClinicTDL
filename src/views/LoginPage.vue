@@ -18,7 +18,7 @@ const handleLogin = async () => {
   try {
     const { data, error: queryError } = await supabase
       .from('system_users')
-      .select('id, username, password_hash, emp_code, full_name')
+      .select('id, username, password_hash, emp_code, full_name, status')
       .eq('username', username.value)
       .maybeSingle()
 
@@ -45,11 +45,16 @@ const handleLogin = async () => {
       username: data.username,
       employee_code: data.emp_code,
       full_name: data.full_name || data.username,
+      status: data.status,
       expiresAt,
     }
 
     localStorage.setItem('clinic_tdl_session', JSON.stringify(session))
-    router.push({ name: 'home' })
+    if (session.status === 'admin') {
+      router.push({ name: 'admin-dashboard' })
+    } else {
+      router.push({ name: 'home' })
+    }
   } catch (e) {
     error.value = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
     console.error(e)
@@ -129,4 +134,3 @@ const handleLogin = async () => {
     </div>
   </div>
 </template>
-

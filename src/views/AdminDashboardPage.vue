@@ -84,9 +84,17 @@ const barChartData = ref({
   datasets: [],
 })
 
+// Admin extras
+const latestImports = ref([]) // { created_at, quantity, note, medicine: { name, sku, unit } }
+const lowStockList = ref([]) // { name, sku, unit, current_stock, min_stock }
+const LOW_STOCK_THRESHOLD = 20
+
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
+  layout: {
+    padding: { top: 8, right: 8, bottom: 8, left: 8 },
+  },
   plugins: {
     legend: {
       labels: {
@@ -241,7 +249,10 @@ const loadDashboardData = async () => {
       usage15DaysRes,
       // Fetch for department stats
       allCheckupsMonthRes,
-      allDispensingMonthRes
+      allDispensingMonthRes,
+      // Admin extras
+      latestReceivesRes,
+      lowStockRes,
     ] = await Promise.all([
       // 0: Patients This Month
       supabase
@@ -306,7 +317,20 @@ const loadDashboardData = async () => {
       supabase
         .from('dispensing_records')
         .select('id, amount, checkup:checkups(employees(department))')
-        .gte('created_at', thisMonthStart.toISOString())
+        .gte('created_at', thisMonthStart.toISOString()),
+      // 12: Latest 10 receive transactions with medicine info
+      supabase
+        .from('stock_transactions')
+        .select('id, created_at, quantity, note, medicine:medicine_list(name, sku, unit)')
+        .eq('transaction_type', 'RECEIVE')
+        .order('created_at', { ascending: false })
+        .limit(5),
+      // 13: Low stock list
+      supabase
+        .from('medicine_list')
+        .select('id, name, unit, current_stock')
+        .order('current_stock', { ascending: true })
+        .limit(20),
     ])
 
     // --- Process Summary ---
@@ -408,6 +432,21 @@ const loadDashboardData = async () => {
 
     departmentStats.value = Object.values(depMap).sort((a, b) => b.patientCount - a.patientCount)
 
+    // --- Process Admin Extras ---
+    latestImports.value = (latestReceivesRes.data || []).map(r => ({
+      created_at: r.created_at,
+      quantity: r.quantity || 0,
+      note: r.note || '',
+      medicine: {
+        name: r?.medicine?.name || '-',
+        sku: r?.medicine?.sku || '',
+        unit: r?.medicine?.unit || '',
+      },
+    }))
+    const threshold = LOW_STOCK_THRESHOLD
+    const lowRows = (lowStockRes.data || []).filter(m => Number(m?.current_stock ?? 0) <= threshold)
+    lowStockList.value = lowRows.slice(0, 10)
+
   } catch (err) {
     console.error('Dashboard load error', err)
   } finally {
@@ -498,390 +537,383 @@ const exportDashboardPdf = async () => {
       table { width: 100%; border-collapse: collapse; font-size: 12px; }
       th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
       th { background: #f1f5f9; font-weight: 600; }
-      .text-right { text-align: right; }
-      
-      .chart-container { width: 100%; text-align: center; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-top: 8px; }
-      img { max-width: 100%; height: auto; max-height: 300px; }
+      .chart-container { text-align: center; margin-top: 16px; }
+      img { max-width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; }
     </style>
   </head>
   <body>
-    <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-      <div>
-        <h1>รายงานแดชบอร์ดคลินิก TDL</h1>
-        <div class="muted">พิมพ์เมื่อ: ${fmt(now)}</div>
-      </div>
-      <div style="text-align:right; font-size:12px;">
-        <div>เดือนปัจจุบัน: ${thaiMonthsLong[now.getMonth()] || ''} ${now.getFullYear()}</div>
-      </div>
-    </div>
+    <h1>รายงานแดชบอร์ดคลินิก TDL</h1>
+    <div class="muted">สร้างเมื่อ: ${fmt(now)}</div>
 
     <div class="section">
-      <h2>ภาพรวม (KPI Overview)</h2>
+      <h2>สรุปภาพรวม (เทียบกับเดือนก่อนหน้า)</h2>
       <div class="grid-4">
         <div class="card">
           <div class="card-title">ผู้ป่วยเดือนนี้</div>
           <div class="card-val">${summary.value.patientsThisMonth.value}</div>
-          <div class="card-diff ${summary.value.patientsThisMonth.change >= 0 ? 'text-red' : 'text-green'}">
-            ${diffText(summary.value.patientsThisMonth.value, summary.value.patientsThisMonth.value / (1 + summary.value.patientsThisMonth.change/100))} เทียบเดือนก่อน
+          <div class="card-diff ${summary.value.patientsThisMonth.change >= 0 ? 'text-green' : 'text-red'}">
+            ${summary.value.patientsThisMonth.change.toFixed(1)}%
           </div>
         </div>
         <div class="card">
-          <div class="card-title">สต็อกยารวม</div>
+          <div class="card-title">สต็อกยาทั้งหมด</div>
           <div class="card-val">${summary.value.totalStock.value}</div>
-          <div class="card-diff muted">หน่วย</div>
+          <div class="card-diff text-green">&nbsp;</div>
         </div>
         <div class="card">
-          <div class="card-title">นำเข้ายาเดือนนี้</div>
+          <div class="card-title">รับเข้าเดือนนี้</div>
           <div class="card-val">${summary.value.importedThisMonth.value}</div>
           <div class="card-diff ${summary.value.importedThisMonth.change >= 0 ? 'text-green' : 'text-red'}">
-             ${diffText(summary.value.importedThisMonth.value, prevImported.value)}
+            ${diffText(summary.value.importedThisMonth.value, prevImported.value)}
           </div>
         </div>
         <div class="card">
           <div class="card-title">จ่ายยาเดือนนี้</div>
           <div class="card-val">${summary.value.dispensedThisMonth.value}</div>
           <div class="card-diff ${summary.value.dispensedThisMonth.change >= 0 ? 'text-red' : 'text-green'}">
-             ${diffText(summary.value.dispensedThisMonth.value, prevDispensed.value)}
+            ${diffText(summary.value.dispensedThisMonth.value, prevDispensed.value)}
           </div>
         </div>
       </div>
     </div>
 
     <div class="section">
-      <h2>สถิติรายแผนก (Top Departments)</h2>
-      <div style="display: flex; gap: 16px;">
-        <div style="flex: 1;">
-          <table>
-            <thead>
-              <tr>
-                <th>แผนก</th>
-                <th class="text-right">ผู้ป่วย (คน)</th>
-                <th class="text-right">ใช้ยา (หน่วย)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${departmentStats.value.slice(0, 10).map(d => `
-                <tr>
-                  <td>${d.department}</td>
-                  <td class="text-right">${d.patientCount}</td>
-                  <td class="text-right">${d.medicineCount}</td>
-                </tr>
-              `).join('')}
-              ${departmentStats.value.length === 0 ? '<tr><td colspan="3" class="muted text-center">ไม่มีข้อมูล</td></tr>' : ''}
-            </tbody>
-          </table>
-        </div>
-        <div style="flex: 1;">
-           <div class="chart-container">
-             <div class="muted" style="margin-bottom:4px">เปรียบเทียบ KPI รายแผนก</div>
-             ${barCanvasImage.value ? `<img src="${barCanvasImage.value}" />` : '<div class="muted">ไม่มีกราฟ</div>'}
-           </div>
-        </div>
-      </div>
+      <h2>ผู้ป่วยล่าสุด (วันนี้)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>เวลา</th>
+            <th>รหัส</th>
+            <th>ชื่อ</th>
+            <th>แผนก</th>
+            <th>อาการ</th>
+            <th>จ่ายยา (หน่วย)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lastPatients.value.map(p => `
+            <tr>
+              <td>${new Date(p.created_at).toLocaleTimeString('th-TH')}</td>
+              <td>${p.employee_code}</td>
+              <td>${p.fullname}</td>
+              <td>${p.department}</td>
+              <td>${p.diagnosis}</td>
+              <td>${p.amount}</td>
+            </tr>
+          `).join('')}
+          ${lastPatients.value.length === 0 ? '<tr><td colspan="6" style="text-align:center;">ไม่มีข้อมูล</td></tr>' : ''}
+        </tbody>
+      </table>
     </div>
-
+    
     <div class="section">
-      <h2>แนวโน้ม 15 วันล่าสุด</h2>
+      <h2>สถิติผู้ป่วยและยา (15 วันล่าสุด)</h2>
       <div class="chart-container">
-        ${lineCanvasImage.value ? `<img src="${lineCanvasImage.value}" />` : '<div class="muted">ไม่มีกราฟ</div>'}
+        <img src="${lineCanvasImage.value}" alt="Line Chart" />
       </div>
     </div>
 
     <div class="section">
-      <div style="display: flex; gap: 16px;">
-        <div style="flex: 1;">
-          <h2>อาการที่พบบ่อย (Top Symptoms)</h2>
-          <table>
-            <thead><tr><th>อาการ/โรค</th><th class="text-right">จำนวนครั้ง</th></tr></thead>
-            <tbody>
-              ${mostSymptoms.value.map(r => `<tr><td>${r.symptoms}</td><td class="text-right">${r.count}</td></tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div style="flex: 1;">
-           <h2>ผู้ป่วยล่าสุด (วันนี้)</h2>
-           <table>
-             <thead><tr><th>เวลา</th><th>ชื่อ-สกุล</th><th>แผนก</th></tr></thead>
-             <tbody>
-               ${lastPatients.value.map(p => `
-                 <tr>
-                   <td>${new Date(p.created_at).toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'})}</td>
-                   <td>${p.fullname}</td>
-                   <td>${p.department}</td>
-                 </tr>
-               `).join('')}
-             </tbody>
-           </table>
-        </div>
+      <h2>สถิติแผนก (เดือนนี้)</h2>
+      <div class="chart-container">
+        <img src="${barCanvasImage.value}" alt="Bar Chart" />
       </div>
+    </div>
+
+    <div class="section">
+      <h2>อาการที่พบบ่อย (15 วันล่าสุด)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>อาการ</th>
+            <th>จำนวน (ครั้ง)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${mostSymptoms.value.map(s => `
+            <tr>
+              <td>${s.symptoms}</td>
+              <td>${s.count}</td>
+            </tr>
+          `).join('')}
+          ${mostSymptoms.value.length === 0 ? '<tr><td colspan="2" style="text-align:center;">ไม่มีข้อมูล</td></tr>' : ''}
+        </tbody>
+      </table>
     </div>
 
   </body>
 </html>
     `
-    w.document.open()
     w.document.write(html)
     w.document.close()
-    setTimeout(() => {
-      w.focus()
-      w.print()
-    }, 500)
-  } catch (e) {
-    console.error('Export dashboard PDF failed', e)
-    import('../stores/ui').then(({ showToast }) => showToast('error', 'เกิดข้อผิดพลาดในการส่งออก PDF'))
+    w.print()
+  } catch (err) {
+    console.error(err)
+    alert('Failed to generate PDF')
   }
 }
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4">
+    <!-- Header -->
     <div class="flex items-center justify-between">
       <h1 class="text-xl font-semibold text-slate-900 dark:text-white">
-        Dashboard (ภาพรวม)
+        แดชบอร์ด
       </h1>
-      <button
+      <!-- <button
         type="button"
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-clinic-blue text-white hover:bg-blue-700 transition-colors shadow-sm"
+        class="inline-flex items-center justify-center gap-1 rounded-lg bg-clinic-blue text-white px-3 py-2 text-xs hover:bg-blue-700"
         @click="exportDashboardPdf"
       >
-        <i class="fa-solid fa-file-pdf"></i>
-        <span>ส่งออก PDF</span>
-      </button>
+        <i class="fa-solid fa-print"></i>
+        <span>พิมพ์รายงาน</span>
+      </button> -->
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-      <!-- Patients -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">ผู้ป่วยเดือนนี้</span>
-          <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
-            <i class="fa-solid fa-user-injured text-clinic-blue dark:text-blue-400 text-sm"></i>
-          </div>
-        </div>
-        <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
-          {{ summary.patientsThisMonth.value }}
-        </div>
-        <div
-          class="text-xs font-medium flex items-center gap-1"
-          :class="summary.patientsThisMonth.change > 0 ? 'text-red-500' : 'text-emerald-500'"
-        >
-          <i :class="summary.patientsThisMonth.change > 0 ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-trend-down'"></i>
-          {{ Math.abs(summary.patientsThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
-        </div>
-      </div>
-
-      <!-- Stock -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">สต็อกยารวม</span>
-          <div class="w-8 h-8 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center">
-            <i class="fa-solid fa-pills text-purple-600 dark:text-purple-400 text-sm"></i>
-          </div>
-        </div>
-        <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
-          {{ summary.totalStock.value }}
-        </div>
-        <div class="text-xs text-slate-400">
-          จำนวนคงเหลือทุกรายการ
-        </div>
-      </div>
-
-      <!-- Import -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">นำเข้าเดือนนี้</span>
-          <div class="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
-            <i class="fa-solid fa-truck-medical text-emerald-600 dark:text-emerald-400 text-sm"></i>
-          </div>
-        </div>
-        <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
-          {{ summary.importedThisMonth.value }}
-        </div>
-        <div
-          class="text-xs font-medium flex items-center gap-1"
-          :class="summary.importedThisMonth.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
-        >
-          <i :class="summary.importedThisMonth.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-          {{ Math.abs(summary.importedThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
-        </div>
-      </div>
-
-      <!-- Dispensed -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">จ่ายยาเดือนนี้</span>
-          <div class="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center">
-            <i class="fa-solid fa-prescription-bottle-medical text-orange-600 dark:text-orange-400 text-sm"></i>
-          </div>
-        </div>
-        <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
-          {{ summary.dispensedThisMonth.value }}
-        </div>
-        <div
-          class="text-xs font-medium flex items-center gap-1"
-          :class="summary.dispensedThisMonth.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
-        >
-          <i :class="summary.dispensedThisMonth.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-          {{ Math.abs(summary.dispensedThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
-        </div>
-      </div>
+    <div v-if="loading" class="text-center py-10 text-slate-500">
+      กำลังโหลดข้อมูล...
     </div>
 
-    <!-- Charts Section -->
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <!-- KPI Chart -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 h-80 flex flex-col shadow-sm">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-sm font-semibold text-slate-800 dark:text-white">แนวโน้ม 15 วันล่าสุด</h2>
-          <span class="text-xs text-slate-500">ผู้ป่วย vs การจ่ายยา</span>
-        </div>
-        <div class="flex-1 min-h-0 relative w-full">
-          <Line 
-            v-if="chartData.labels.length" 
-            :data="chartData" 
-            :options="{
-              ...chartOptions, 
-              plugins: { ...chartOptions.plugins, drawValues: {} }
-            }" 
-            :plugins="[drawValuesPlugin]"
-          />
-          <div v-else class="h-full flex items-center justify-center text-xs text-slate-400">
-            กำลังโหลดข้อมูล...
-          </div>
-        </div>
-      </div>
-
-      <!-- Department Chart -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 h-80 flex flex-col shadow-sm">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-sm font-semibold text-slate-800 dark:text-white">สถิติรายแผนก (Top Departments)</h2>
-          <span class="text-xs text-slate-500">เปรียบเทียบผู้ป่วยและการใช้ยา</span>
-        </div>
-        <div class="flex-1 min-h-0 relative w-full">
-          <Bar 
-            v-if="barChartData.labels.length" 
-            :data="barChartData" 
-            :options="{
-              ...chartOptions, 
-              plugins: { ...chartOptions.plugins, drawValues: {} }
-            }" 
-            :plugins="[drawValuesPlugin]"
-          />
-          <div v-else class="h-full flex items-center justify-center text-xs text-slate-400">
-            ไม่มีข้อมูลแผนก
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Stats Lists -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- Most Symptoms -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm">
-        <h2 class="text-sm font-semibold text-slate-800 dark:text-white mb-2">
-          <i class="fa-solid fa-virus text-rose-500 mr-2"></i>
-          อาการที่พบบ่อย (Top Symptoms)
-        </h2>
-        <div v-if="mostSymptoms.length" class="space-y-2 text-xs">
-          <div
-            v-for="(row, i) in mostSymptoms"
-            :key="row.symptoms"
-            class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-700/50"
-          >
-            <div class="flex items-center gap-2 overflow-hidden">
-              <span class="w-5 h-5 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[10px] shadow-sm">
-                {{ i + 1 }}
-              </span>
-              <span class="truncate font-medium text-slate-700 dark:text-slate-200">{{ row.symptoms || 'ไม่ระบุ' }}</span>
+    <div v-else class="space-y-4">
+      <!-- Summary Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <!-- Patients -->
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-500 font-medium">ผู้ป่วยเดือนนี้</span>
+            <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+              <i class="fa-solid fa-user-injured text-clinic-blue dark:text-blue-400 text-sm"></i>
             </div>
-            <span class="font-bold text-slate-900 dark:text-white bg-white dark:bg-slate-600 px-2 py-0.5 rounded shadow-sm">{{ row.count }}</span>
+          </div>
+          <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
+            {{ summary.patientsThisMonth.value }}
+          </div>
+          <div
+            class="text-xs font-medium flex items-center gap-1"
+            :class="summary.patientsThisMonth.change > 0 ? 'text-red-500' : 'text-emerald-500'"
+          >
+            <i :class="summary.patientsThisMonth.change > 0 ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-trend-down'"></i>
+            {{ Math.abs(summary.patientsThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
           </div>
         </div>
-        <div v-else class="text-xs text-slate-400 text-center py-4">
-          ไม่มีข้อมูล
+
+        <!-- Stock -->
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-500 font-medium">สต็อกยารวม</span>
+            <div class="w-8 h-8 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center">
+              <i class="fa-solid fa-pills text-purple-600 dark:text-purple-400 text-sm"></i>
+            </div>
+          </div>
+          <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
+            {{ summary.totalStock.value }}
+          </div>
+          <div class="text-xs text-slate-400">
+            จำนวนคงเหลือทุกรายการ
+          </div>
+        </div>
+
+        <!-- Import -->
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-500 font-medium">นำเข้าเดือนนี้</span>
+            <div class="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
+              <i class="fa-solid fa-truck-medical text-emerald-600 dark:text-emerald-400 text-sm"></i>
+            </div>
+          </div>
+          <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
+            {{ summary.importedThisMonth.value }}
+          </div>
+          <div
+            class="text-xs font-medium flex items-center gap-1"
+            :class="summary.importedThisMonth.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
+          >
+            <i :class="summary.importedThisMonth.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+            {{ Math.abs(summary.importedThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
+          </div>
+        </div>
+
+        <!-- Dispensed -->
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-500 font-medium">จ่ายยาเดือนนี้</span>
+            <div class="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center">
+              <i class="fa-solid fa-prescription-bottle-medical text-orange-600 dark:text-orange-400 text-sm"></i>
+            </div>
+          </div>
+          <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
+            {{ summary.dispensedThisMonth.value }}
+          </div>
+          <div
+            class="text-xs font-medium flex items-center gap-1"
+            :class="summary.dispensedThisMonth.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
+          >
+            <i :class="summary.dispensedThisMonth.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+            {{ Math.abs(summary.dispensedThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
+          </div>
         </div>
       </div>
 
-      <!-- Department Stats Table -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm">
-        <h2 class="text-sm font-semibold text-slate-800 dark:text-white mb-2">
-          <i class="fa-solid fa-building text-indigo-500 mr-2"></i>
-          รายละเอียดตามแผนก
-        </h2>
-        <div class="overflow-x-auto max-h-[300px]">
+      <!-- Charts -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 h-80 flex flex-col overflow-hidden">
+          <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <i class="fa-solid fa-chart-line text-blue-500 mr-2"></i>
+            สถิติผู้ป่วยและยา (15 วันล่าสุด)
+          </h2>
+          <div class="flex-1 min-h-0 relative w-full">
+            <Line id="line" :data="chartData" :options="chartOptions" />
+          </div>
+        </div>
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 h-80 flex flex-col overflow-hidden">
+          <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <i class="fa-solid fa-layer-group text-indigo-500 mr-2"></i>
+            สถิติแผนก (เดือนนี้)
+          </h2>
+          <div class="flex-1 min-h-0 relative w-full">
+            <Bar id="bar" :data="barChartData" :options="chartOptions" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin Extras: Latest Imports & Low Stock -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Latest Imports -->
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-3">
+          <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">
+            <i class="fa-solid fa-boxes-stacked text-emerald-500 mr-2"></i>
+            รายการรับเข้า ล่าสุด
+          </h2>
           <table class="min-w-full text-xs">
-            <thead class="sticky top-0 bg-white dark:bg-slate-800 z-10">
+            <thead>
               <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
-                <th class="py-2 pr-3">แผนก</th>
-                <th class="py-2 pr-3 text-right">ผู้ป่วย</th>
-                <th class="py-2 pr-3 text-right">ยา (หน่วย)</th>
+                <th class="py-2 pr-2">เวลา</th>
+                <th class="py-2 pr-2">ยา</th>
+                <th class="py-2 pr-2 text-right">จำนวน</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="d in departmentStats.slice(0, 8)"
-                :key="d.department"
-                class="border-b border-clinic-border/60 dark:border-slate-800 last:border-0"
+                v-for="r in latestImports"
+                :key="r.created_at + r.medicine.name"
+                class="border-b border-clinic-border/60 dark:border-slate-800"
               >
-                <td class="py-2 pr-3 font-medium">{{ d.department }}</td>
-                <td class="py-2 pr-3 text-right">{{ d.patientCount }}</td>
-                <td class="py-2 pr-3 text-right text-slate-600 dark:text-slate-400">{{ d.medicineCount }}</td>
+                <td class="py-1.5 pr-2">{{ new Date(r.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) }}</td>
+                <td class="py-1.5 pr-2">
+                  <span class="font-medium">{{ r.medicine.name }}</span>
+                </td>
+                <td class="py-1.5 pr-2 text-right font-medium">{{ r.quantity }} {{ r.medicine.unit }}</td>
+              </tr>
+              <tr v-if="!latestImports.length">
+                <td colspan="3" class="py-4 text-center text-slate-400">ไม่มีข้อมูล</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Low Stock -->
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-3">
+          <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">
+            <i class="fa-solid fa-triangle-exclamation text-rose-500 mr-2"></i>
+            รายการยาใกล้หมด
+          </h2>
+          <table class="min-w-full text-xs">
+            <thead>
+              <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                <th class="py-2 pr-2">ยา</th>
+                <th class="py-2 pr-2 text-right">คงเหลือ</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="m in lowStockList"
+                :key="m.id"
+                class="border-b border-clinic-border/60 dark:border-slate-800"
+              >
+                <td class="py-1.5 pr-2">
+                  <span class="font-medium">{{ m.name }}</span>
+                </td>
+                <td class="py-1.5 pr-2 text-right">
+                  <span :class="(m.current_stock ?? 0) <= LOW_STOCK_THRESHOLD ? 'text-red-600 font-semibold' : ''">
+                    {{ m.current_stock ?? 0 }}
+                  </span>
+                  <span class="text-slate-400 ml-1">{{ m.unit }}</span>
+                </td>
+              </tr>
+              <tr v-if="!lowStockList.length">
+                <td colspan="2" class="py-4 text-center text-slate-400">ไม่มีข้อมูล</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
-    </div>
 
-    <!-- Last Patients Table -->
-    <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 shadow-sm">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-sm font-semibold text-slate-800 dark:text-white">
-          <i class="fa-regular fa-clock text-blue-500 mr-2"></i>
-          ผู้ป่วยล่าสุด (วันนี้)
-        </h2>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-xs">
-          <thead>
-            <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-              <th class="py-2 px-3 rounded-tl-lg">เวลา</th>
-              <th class="py-2 px-3">รหัส</th>
-              <th class="py-2 px-3">ชื่อ-นามสกุล</th>
-              <th class="py-2 px-3">แผนก</th>
-              <th class="py-2 px-3">อาการหลัก</th>
-              <th class="py-2 px-3 text-right rounded-tr-lg">ยาที่จ่าย</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in lastPatients"
-              :key="row.id"
-              class="border-b border-clinic-border/60 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
-            >
-              <td class="py-2 px-3 text-slate-500">
-                {{ new Date(row.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) }}
-              </td>
-              <td class="py-2 px-3 font-mono text-slate-500">{{ row.employee_code }}</td>
-              <td class="py-2 px-3 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
-              <td class="py-2 px-3">
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                  {{ row.department }}
-                </span>
-              </td>
-              <td class="py-2 px-3 text-slate-600 dark:text-slate-400">{{ row.diagnosis }}</td>
-              <td class="py-2 px-3 text-right font-medium text-slate-700 dark:text-slate-300">
-                {{ row.amount }}
-              </td>
-            </tr>
-            <tr v-if="!lastPatients.length">
-              <td colspan="6" class="py-8 text-center text-slate-400">
-                ยังไม่มีผู้ป่วยวันนี้
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- Tables -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-3">
+          <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">
+            <i class="fa-solid fa-user-injured text-rose-500 mr-2"></i>
+            ผู้ป่วยล่าสุด (วันนี้)
+          </h2>
+          <table class="min-w-full text-xs">
+            <thead>
+              <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                <th class="py-2 pr-2">เวลา</th>
+                <th class="py-2 pr-2">ชื่อ</th>
+                <th class="py-2 pr-2">แผนก</th>
+                <th class="py-2 pr-2">อาการ</th>
+                <th class="py-2 pr-2 text-right">จ่ายยา</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="p in lastPatients"
+                :key="p.id"
+                class="border-b border-clinic-border/60 dark:border-slate-800"
+              >
+                <td class="py-1.5 pr-2">{{ new Date(p.created_at).toLocaleTimeString('th-TH') }}</td>
+                <td class="py-1.5 pr-2 font-medium">{{ p.fullname }}</td>
+                <td class="py-1.5 pr-2">{{ p.department }}</td>
+                <td class="py-1.5 pr-2">{{ p.diagnosis }}</td>
+                <td class="py-1.5 pr-2 text-right">{{ p.amount }}</td>
+              </tr>
+              <tr v-if="!lastPatients.length">
+                <td colspan="5" class="py-4 text-center text-slate-400">
+                  ไม่มีข้อมูล
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-3">
+          <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 px-1">
+            <i class="fa-solid fa-virus text-purple-500 mr-2"></i>
+            อาการที่พบบ่อย (15 วันล่าสุด)
+          </h2>
+          <table class="min-w-full text-xs">
+            <thead>
+              <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                <th class="py-2 pr-2">อาการ</th>
+                <th class="py-2 pr-2 text-right">จำนวน (ครั้ง)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="s in mostSymptoms"
+                :key="s.symptoms"
+                class="border-b border-clinic-border/60 dark:border-slate-800"
+              >
+                <td class="py-1.5 pr-2 font-medium">{{ s.symptoms }}</td>
+                <td class="py-1.5 pr-2 text-right">{{ s.count }}</td>
+              </tr>
+              <tr v-if="!mostSymptoms.length">
+                <td colspan="2" class="py-4 text-center text-slate-400">
+                  ไม่มีข้อมูล
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

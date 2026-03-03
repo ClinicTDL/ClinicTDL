@@ -4,6 +4,10 @@ import { supabase } from '../supabaseClient'
 import { setNotifications, lowStockThreshold } from '../stores/notifications'
 import { showToast, showConfirm } from '../stores/ui'
 
+const sessionRaw = localStorage.getItem('clinic_tdl_session')
+const session = sessionRaw ? JSON.parse(sessionRaw) : null
+const isAdmin = computed(() => session?.status === 'admin')
+
 const loading = ref(false)
 const medicines = ref([])
 const search = ref('')
@@ -111,6 +115,11 @@ const handleSave = async () => {
   try {
     const sessionRaw = localStorage.getItem('clinic_tdl_session')
     const session = sessionRaw ? JSON.parse(sessionRaw) : null
+
+    if (!isAdmin.value) {
+      showToast('error', 'คุณไม่มีสิทธิ์แก้ไขหรือเพิ่มข้อมูลยา')
+      return
+    }
 
     if (!session || !session.userId) {
       showToast('error', 'กรุณาเข้าสู่ระบบก่อน')
@@ -256,6 +265,7 @@ onMounted(loadMedicines)
       <!-- Add Button -->
 
       <button
+        v-if="isAdmin"
         type="button"
         class="inline-flex items-center justify-center gap-1 rounded-lg bg-clinic-blue text-white px-3 py-2 text-xs hover:bg-blue-700"
         @click="openAddSidebar"
@@ -322,6 +332,7 @@ onMounted(loadMedicines)
             </td>
             <td class="py-1.5 pr-3 text-right">
               <button
+                v-if="isAdmin"
                 @click="openRestockSidebar(m)"
                 class="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800 transition-colors"
               >

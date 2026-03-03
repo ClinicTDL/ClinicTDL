@@ -2,19 +2,30 @@
 import { useRoute, useRouter } from 'vue-router'
 import { computed } from 'vue'
 
+const sessionRaw = localStorage.getItem('clinic_tdl_session')
+const session = sessionRaw ? JSON.parse(sessionRaw) : null
+const isAdmin = computed(() => session?.status === 'admin')
+
 const router = useRouter()
 const route = useRoute()
 
-const menuItems = [
-  { name: 'Home (Medical Checkup)', icon: 'fa-stethoscope', routeName: 'home' },
-  { name: 'Dashboard', icon: 'fa-chart-line', routeName: 'dashboard' },
-  { name: 'รายการยา', icon: 'fa-pills', routeName: 'medicine-list' },
-  { name: 'ประวัติการรักษา', icon: 'fa-notes-medical', routeName: 'treatment-history' },
-  { name: 'ประวัติการจ่ายยา', icon: 'fa-hand-holding-medical', routeName: 'dispensing-history' },
-  { name: 'ประวัติการนำเข้ายา', icon: 'fa-upload', routeName: 'import-history' },
-  { name: 'ข้อมูลพนักงาน', icon: 'fa-user', routeName: 'employee-list' },
-  { name: 'ผู้นำใข้ระบบ', icon: 'fa-users-gear', routeName: 'system-users' },
-]
+const menuItems = computed(() => {
+  const base = [
+    { name: 'Home (Medical Checkup)', icon: 'fa-stethoscope', routeName: 'home' },
+    { name: 'Dashboard', icon: 'fa-chart-line', routeName: isAdmin.value ? 'admin-dashboard' : 'dashboard' },
+    { name: 'รายการยา', icon: 'fa-pills', routeName: 'medicine-list' },
+    { name: 'ประวัติการรักษา', icon: 'fa-notes-medical', routeName: 'treatment-history' },
+    { name: 'ประวัติการจ่ายยา', icon: 'fa-hand-holding-medical', routeName: 'dispensing-history' },
+    { name: 'ประวัติการนำเข้ายา', icon: 'fa-upload', routeName: 'import-history' },
+    { name: 'ข้อมูลพนักงาน', icon: 'fa-user', routeName: 'employee-list' },
+    { name: 'ผู้นำใข้ระบบ', icon: 'fa-users-gear', routeName: 'system-users' },
+  ]
+  
+  if (isAdmin.value) {
+    return base.filter(i => i.routeName !== 'home')
+  }
+  return base
+})
 
 const isActive = (item) => computed(() => route.name === item.routeName)
 

@@ -9,6 +9,8 @@ import DispensingHistoryPage from './views/DispensingHistoryPage.vue'
 import ImportHistoryPage from './views/ImportHistoryPage.vue'
 import SystemUsersPage from './views/SystemUsersPage.vue'
 import EmployeeList from './views/EmployeeList.vue'
+import AdminDashboardPage from './views/AdminDashboardPage.vue'
+import AdminLayout from './views/admin/AdminLayout.vue'
 
 const routes = [
   {
@@ -31,6 +33,20 @@ const routes = [
       { path: 'employee-list', name: 'employee-list', component: EmployeeList },
     ],
   },
+  {
+    path: '/admin',
+    component: AdminLayout,
+    children: [
+      { path: '', redirect: { name: 'admin-dashboard' } },
+      { path: 'dashboard', name: 'admin-dashboard', component: AdminDashboardPage },
+      { path: 'medicine-list', name: 'admin-medicine-list', component: MedicineListPage },
+      { path: 'treatment-history', name: 'admin-treatment-history', component: TreatmentHistoryPage },
+      { path: 'dispensing-history', name: 'admin-dispensing-history', component: DispensingHistoryPage },
+      { path: 'import-history', name: 'admin-import-history', component: ImportHistoryPage },
+      { path: 'system-users', name: 'admin-system-users', component: SystemUsersPage },
+      { path: 'employee-list', name: 'admin-employee-list', component: EmployeeList },
+    ],
+  },
 ]
 
 const router = createRouter({
@@ -51,8 +67,22 @@ router.beforeEach((to, from, next) => {
 
   if (to.name !== 'login' && !isAuthenticated) {
     next({ name: 'login' })
+  } else if ((to.path || '').startsWith('/admin') || (to.name && String(to.name).startsWith('admin-'))) {
+    if (!isAuthenticated) {
+      next({ name: 'login' })
+    } else if (session?.status !== 'admin') {
+      next({ name: 'home' })
+    } else {
+      next()
+    }
+  } else if (to.name === 'home' && isAuthenticated && session?.status === 'admin') {
+    next({ name: 'admin-dashboard' })
   } else if (to.name === 'login' && isAuthenticated) {
-    next({ name: 'home' })
+    if (session.status === 'admin') {
+      next({ name: 'admin-dashboard' })
+    } else {
+      next({ name: 'home' })
+    }
   } else {
     next()
   }

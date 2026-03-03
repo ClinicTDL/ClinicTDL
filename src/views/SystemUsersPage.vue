@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { supabase } from '../supabaseClient'
 import bcrypt from 'bcryptjs'
 
@@ -16,9 +16,14 @@ let employeeSearchTimer = null
 
 const newUsername = ref('')
 const newPassword = ref('')
+const newStatus = ref('user')
 const saving = ref(false)
 const confirmAdd = ref(false)
 const saveError = ref('')
+
+const rawSession = localStorage.getItem('clinic_tdl_session')
+const session = rawSession ? JSON.parse(rawSession) : null
+const isAdmin = computed(() => session?.status === 'admin')
 
 const loadUsers = async () => {
   loading.value = true
@@ -61,6 +66,7 @@ const openAdd = () => {
   selectedEmployee.value = null
   newUsername.value = ''
   newPassword.value = ''
+  newStatus.value = 'user'
   confirmAdd.value = false
   saveError.value = ''
 }
@@ -111,6 +117,10 @@ const requestSave = () => {
     saveError.value = 'กรอกข้อมูลให้ครบ'
     return
   }
+  if (!isAdmin.value && newStatus.value === 'admin') {
+    saveError.value = 'ผู้ใช้ทั่วไปไม่สามารถเพิ่มผู้ใช้สถานะ admin ได้'
+    return
+  }
   confirmAdd.value = true
 }
 
@@ -126,6 +136,7 @@ const confirmSave = async () => {
       password_hash,
       emp_code: selectedEmployee.value.employee_code,
       full_name: selectedEmployee.value.fullname,
+      status: isAdmin.value ? newStatus.value : 'user',
       created_by: creatorId,
     }
     const { error } = await supabase.from('system_users').insert(payload)
@@ -222,6 +233,7 @@ onMounted(loadUsers)
             <input
               v-model="newUsername"
               type="text"
+              placeholder="กรอกชื่อนำใช้ระบบ"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             />
           </div>
@@ -230,8 +242,20 @@ onMounted(loadUsers)
             <input
               v-model="newPassword"
               type="password"
+              placeholder="กรอกรหัสผ่าน"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             />
+          </div>
+          <div>
+            <div class="text-xs text-slate-600 dark:text-slate-300">สถานะผู้ใช้</div>
+            <select
+              v-model="newStatus"
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              :disabled="!isAdmin"
+            >
+              <option value="user">user</option>
+              <option v-if="isAdmin" value="admin">admin</option>
+            </select>
           </div>
         </div>
         <div class="text-xs text-red-600" v-if="saveError">{{ saveError }}</div>

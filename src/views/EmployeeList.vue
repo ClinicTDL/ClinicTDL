@@ -760,6 +760,7 @@ onMounted(async () => {
               <input
                 v-model="formData.employee_code"
                 type="text"
+                placeholder="กรอกรหัสพนักงาน"
                 class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
             </div>
@@ -770,6 +771,7 @@ onMounted(async () => {
               <input
                 v-model="formData.fullname"
                 type="text"
+                placeholder="กรอกชื่อ-นามสกุล"
                 class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
             </div>
@@ -781,6 +783,7 @@ onMounted(async () => {
               <input
                 v-model="formData.position"
                 type="text"
+                placeholder="กรอกตำแหน่ง"
                 class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
             </div>
@@ -789,6 +792,7 @@ onMounted(async () => {
               <input
                 v-model="formData.department"
                 type="text"
+                placeholder="กรอกชื่อแผนก"
                 class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
             </div>
@@ -800,6 +804,7 @@ onMounted(async () => {
               <input
                 v-model="formData.project"
                 type="text"
+                placeholder="เชโปน, เชกอง, ฯลฯ"
                 class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
             </div>
@@ -808,6 +813,7 @@ onMounted(async () => {
               <input
                 v-model="formData.company"
                 type="text"
+                placeholder="กรอกชื่อบริษัท"
                 class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
             </div>
@@ -829,6 +835,7 @@ onMounted(async () => {
               <input
                 v-model="formData.tel"
                 type="text"
+                placeholder="20, 30, ฯลฯ"
                 class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
             </div>
@@ -839,7 +846,7 @@ onMounted(async () => {
             <input
               v-model="formData.status"
               type="text"
-              placeholder="เช่น ทำงานอยู่, ลาออก"
+              placeholder="พนักงาน, ลาออก, ฯลฯ"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             />
           </div>
@@ -851,6 +858,7 @@ onMounted(async () => {
             <textarea
               v-model="formData.congenital_disease"
               rows="2"
+              placeholder="ถ้ามี"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             ></textarea>
           </div>
@@ -862,6 +870,7 @@ onMounted(async () => {
             <textarea
               v-model="formData.drug_allergy"
               rows="2"
+              placeholder="ถ้ามี"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             ></textarea>
           </div>
