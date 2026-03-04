@@ -20,9 +20,13 @@ const showEditSidebar = ref(false)
 const isChangingPassword = ref(false)
 const isLoadingProfile = ref(false)
 const isSavingPassword = ref(false)
+const isSavingProfile = ref(false)
 const passwordError = ref('')
 const passwordSuccess = ref('')
+const profileError = ref('')
+const profileSuccess = ref('')
 const fileInput = ref(null)
+const showImageOptions = ref(false)
 
 const editForm = reactive({
   username: '',
@@ -89,11 +93,24 @@ const handleEditProfile = async () => {
   showEditSidebar.value = true
   isLoadingProfile.value = true
   isChangingPassword.value = false
+  showImageOptions.value = false
   passwordError.value = ''
   passwordSuccess.value = ''
+  profileError.value = ''
+  profileSuccess.value = ''
   passwordForm.oldPassword = ''
   passwordForm.newPassword = ''
   passwordForm.confirmPassword = ''
+
+  // Add global click listener to close image options
+  const closeOptions = () => {
+    showImageOptions.value = false
+  }
+  window.addEventListener('click', closeOptions)
+  // Clean up listener when sidebar closes or component unmounts
+  watch(showEditSidebar, (val) => {
+    if (!val) window.removeEventListener('click', closeOptions)
+  })
 
   try {
     // Reload user data from DB to be sure
@@ -118,6 +135,15 @@ const handleEditProfile = async () => {
 
 const triggerFileUpload = () => {
   fileInput.value?.click()
+  showImageOptions.value = false
+}
+
+const removeProfileImage = () => {
+  if (user.value?.username) {
+    localStorage.removeItem(`clinic_tdl_avatar_${user.value.username}`)
+    profileImage.value = null
+    showImageOptions.value = false
+  }
 }
 
 const onFileSelected = (event) => {
@@ -134,6 +160,64 @@ const onFileSelected = (event) => {
     }
   }
   reader.readAsDataURL(file)
+}
+
+const saveProfile = async () => {
+  profileError.value = ''
+  profileSuccess.value = ''
+
+  if (!editForm.username.trim()) {
+    profileError.value = 'กรุณากรอก Username'
+    return
+  }
+
+  isSavingProfile.value = true
+  try {
+    const oldUsername = user.value.username
+    const newUsername = editForm.username.trim()
+
+    // 1. Check if username changed and if new one is taken
+    if (newUsername !== oldUsername) {
+      const { data: existing } = await supabase
+        .from('system_users')
+        .select('id')
+        .eq('username', newUsername)
+        .maybeSingle()
+      
+      if (existing) {
+        throw new Error('Username นี้ถูกใช้งานแล้ว')
+      }
+    }
+
+    // 2. Update DB
+    const { error: updateError } = await supabase
+      .from('system_users')
+      .update({ username: newUsername })
+      .eq('id', user.value.userId)
+
+    if (updateError) throw updateError
+
+    // 3. Migrate profile image if username changed
+    if (newUsername !== oldUsername) {
+      const img = localStorage.getItem(`clinic_tdl_avatar_${oldUsername}`)
+      if (img) {
+        localStorage.setItem(`clinic_tdl_avatar_${newUsername}`, img)
+        localStorage.removeItem(`clinic_tdl_avatar_${oldUsername}`)
+      }
+    }
+
+    // 4. Update local session
+    const updatedSession = { ...user.value, username: newUsername }
+    localStorage.setItem('clinic_tdl_session', JSON.stringify(updatedSession))
+    user.value = updatedSession
+
+    profileSuccess.value = 'บันทึกข้อมูลสำเร็จ'
+  } catch (err) {
+    console.error(err)
+    profileError.value = err.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล'
+  } finally {
+    isSavingProfile.value = false
+  }
 }
 
 const toggleChangePassword = () => {
@@ -367,16 +451,47 @@ onUnmounted(() => {
           <div class="flex-1 overflow-y-auto p-6 space-y-6">
             <!-- Profile Image Section -->
             <div class="flex flex-col items-center gap-4">
-              <div class="relative group cursor-pointer" @click="triggerFileUpload">
-                <div class="w-24 h-24 rounded-full border-2 border-clinic-blue overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+              <div class="relative group">
+                <div 
+                  class="w-24 h-24 rounded-full border-2 border-clinic-blue overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center cursor-pointer"
+                  @click.stop="showImageOptions = !showImageOptions"
+                >
                   <img v-if="profileImage" :src="profileImage" class="w-full h-full object-cover" />
                   <i v-else class="fa-solid fa-user text-4xl text-slate-300"></i>
                 </div>
-                <div class="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                
+                <!-- Image Options Popover (Left Side) -->
+                <div 
+                  v-if="showImageOptions"
+                  class="absolute top-1/2 right-full -translate-y-1/2 mr-4 w-40 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-clinic-border dark:border-slate-700 py-1 z-10 animate-fade-in"
+                  @click.stop
+                >
+                  <button 
+                    @click="triggerFileUpload"
+                    class="w-full px-4 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-200"
+                  >
+                    <i class="fa-solid fa-upload text-clinic-blue"></i>
+                    อัพโหลดรูปภาพ
+                  </button>
+                  <button 
+                    @click="removeProfileImage"
+                    :disabled="!profileImage"
+                    class="w-full px-4 py-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <i class="fa-solid fa-trash-can"></i>
+                    ลบรูปภาพ
+                  </button>
+                  <!-- Arrow (Pointing Right) -->
+                  <div class="absolute top-1/2 left-full -translate-y-1/2 border-8 border-transparent border-l-white dark:border-l-slate-800"></div>
+                </div>
+
+                <div 
+                  class="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer pointer-events-none"
+                >
                   <i class="fa-solid fa-camera text-white text-xl"></i>
                 </div>
               </div>
-              <p class="text-xs text-slate-500">คลิกที่รูปเพื่อเปลี่ยนรูปโปรไฟล์</p>
+              <p class="text-[11px] text-slate-500">คลิกที่รูปเพื่อจัดการรูปโปรไฟล์</p>
               <input 
                 ref="fileInput"
                 type="file" 
@@ -393,7 +508,7 @@ onUnmounted(() => {
                 <input 
                   :value="editForm.employee_code || '-'" 
                   readonly 
-                  class="w-full rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-clinic-border dark:border-slate-700 px-3 py-2 text-sm text-slate-500"
+                  class="w-full rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-clinic-border dark:border-slate-700 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
                 />
               </div>
               <div>
@@ -401,19 +516,41 @@ onUnmounted(() => {
                 <input 
                   :value="editForm.full_name || '-'" 
                   readonly 
-                  class="w-full rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-clinic-border dark:border-slate-700 px-3 py-2 text-sm text-slate-500"
+                  class="w-full rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-clinic-border dark:border-slate-700 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
                 />
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">ชื่อผู้ใช้งาน (Username)</label>
                 <input 
-                  :value="editForm.username" 
-                  readonly 
-                  class="w-full rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-clinic-border dark:border-slate-700 px-3 py-2 text-sm text-slate-500"
+                  v-model="editForm.username" 
+                  type="text"
+                  class="w-full rounded-lg bg-white dark:bg-slate-900 border border-clinic-border dark:border-slate-600 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-clinic-blue focus:border-transparent outline-none transition-all"
+                  placeholder="กรอก Username"
                 />
               </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">รหัสผ่าน</label>
+
+              <!-- Profile Info Messages -->
+              <div v-if="profileError" class="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 p-2 rounded flex items-center gap-2">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                {{ profileError }}
+              </div>
+              <div v-if="profileSuccess" class="text-xs text-green-500 bg-green-50 dark:bg-green-900/20 p-2 rounded flex items-center gap-2">
+                <i class="fa-solid fa-circle-check"></i>
+                {{ profileSuccess }}
+              </div>
+
+              <button 
+                @click="saveProfile"
+                :disabled="isSavingProfile || isLoadingProfile"
+                class="w-full py-2 bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                <i v-if="isSavingProfile" class="fa-solid fa-circle-notch fa-spin"></i>
+                <i v-else class="fa-solid fa-user-check"></i>
+                บันทึกการเปลี่ยนแปลงโปรไฟล์
+              </button>
+
+              <div class="pt-4 border-t border-clinic-border dark:border-slate-800">
+                <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">ความปลอดภัย</label>
                 <div class="relative">
                   <input 
                     type="password" 

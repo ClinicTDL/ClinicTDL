@@ -523,6 +523,51 @@ const downloadResultCsv = () => {
   URL.revokeObjectURL(url)
 }
 
+const downloadCsvTemplate = () => {
+  const headers = [
+    'employee_code',
+    'fullname',
+    'position',
+    'department',
+    'project',
+    'company',
+    'dob',
+    'tel',
+    'status',
+    'congenital_disease',
+    'drug_allergy',
+  ]
+  const rows = [
+    ['L2509027', 'ท้าว ทะนงพอน แก่นสีวง', 'จนท.DMIS', 'Project Coordination', 'เชโปน', 'THAIDRILL LAO SOLE', '2000-01-15', '020 12345678', 'พนักงาน', '', ''],
+    ['L2509032', 'นาง อาทีน่า บุดลัดตะนะวง', 'พ.ธุรการ-Operation', 'Operation', 'เชโปน', 'THAIDRILL LAO SOLE', '1999-12-31', '020 87654321', 'พนักงาน', 'ความดันโลหิตสูง', 'Penicillin'],
+    [],
+    ['รหัสพนักงาน', 'ชื่อ-นามสกุล', 'ตำแหน่ง', 'แผนก', 'โครงการ', 'บริษัท', 'วันเกิด(YYYY-MM-DD)', 'เบอร์โทร', 'สถานะ', 'โรคประจำตัว', 'แพ้ยา'],
+    ['', '', '', '', '', '', '*1999-01-31', '', 'พนักงาน, ลาออก', 'ถ้าไม่มีให้ปล่อยว่าง', 'ถ้าไม่มีให้ปล่อยว่าง'],
+  ]
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => {
+      const s = String(cell)
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`
+      }
+      return s
+    }).join(','))
+  ].join('\n')
+
+  // Add UTF-8 BOM to support Thai characters in Excel
+  const BOM = '\uFEFF'
+  const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'employee_template.csv'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 onMounted(async () => {
   await Promise.all([loadDepartments(), loadRecentEmployees()])
 })
@@ -878,8 +923,44 @@ onMounted(async () => {
 
         <div
           v-else
-          class="flex-1 overflow-y-auto pr-1 space-y-3"
+          class="flex-1 overflow-y-auto pr-1 space-y-4"
         >
+          <!-- Download Template Section -->
+          <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-xl p-4 space-y-3">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center">
+                <i class="fa-solid fa-download text-xs"></i>
+              </div>
+              <div class="text-xs font-semibold text-blue-900 dark:text-blue-100">ดาวน์โหลดเทมเพลต CSV</div>
+            </div>
+            <p class="text-[11px] text-blue-700 dark:text-blue-300">
+              กรุณาใช้ไฟล์เทมเพลตที่ถูกต้องเพื่อให้ระบบสามารถนำเข้าข้อมูลได้อย่างถูกต้อง
+            </p>
+            <button
+              type="button"
+              class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
+              @click="downloadCsvTemplate"
+            >
+              <i class="fa-solid fa-file-csv"></i>
+              <span>ดาวน์โหลด employee_template.csv</span>
+            </button>
+          </div>
+
+          <!-- Instructions Section -->
+          <div class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+            <div class="text-[11px] font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+              <i class="fa-solid fa-circle-info text-blue-500"></i>
+              ข้อควรระวังในการเตรียมข้อมูล
+            </div>
+            <ul class="text-[10px] text-slate-600 dark:text-slate-400 space-y-1.5 list-disc pl-4">
+              <li><b>employee_code:</b> รหัสพนักงาน (ห้ามซ้ำกับที่มีอยู่แล้ว)</li>
+              <li><b>fullname:</b> ชื่อ-นามสกุล (ห้ามเป็นค่าว่าง)</li>
+              <li><b>dob:</b> วันเกิด รูปแบบปี-เดือน-วัน (เช่น 1990-01-31)</li>
+              <li><b>timestamp:</b> ไม่ต้องใส่ในไฟล์ ระบบจะสร้างให้อัตโนมัติ</li>
+              <li>ห้ามลบหรือแก้ไขชื่อหัวข้อ (Header) ในแถวแรกของไฟล์</li>
+            </ul>
+          </div>
+
           <div
             class="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-clinic-border dark:border-slate-600 rounded-xl px-4 py-8 bg-clinic-light/40 dark:bg-slate-800/40"
             @dragover.prevent

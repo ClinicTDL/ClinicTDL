@@ -263,6 +263,10 @@ const searchMedicines = async () => {
 
 const addMedicine = (med) => {
   if (selectedItems.value.some((i) => i.id === med.id)) return
+  if ((med.current_stock || 0) <= 0) {
+    showToast('error', `ยา ${med.name} หมดสต็อก ไม่สามารถจ่ายได้`)
+    return
+  }
   selectedItems.value.push({
     id: med.id,
     name: med.name,
@@ -380,6 +384,55 @@ const saveCheckup = async () => {
   message.value = ''
 
   try {
+    const parseDec = (v) => {
+      const n = parseFloat(String(v ?? '').toString().replace(',', '.'))
+      return Number.isFinite(n) ? Math.round(n * 100) / 100 : null
+    }
+    const clamp = (n, min, max) =>
+      n == null ? null : Math.max(min, Math.min(max, n))
+
+    const tempNumRaw = parseDec(temp.value)
+    if (tempNumRaw !== null && (tempNumRaw < 30 || tempNumRaw > 45)) {
+      showToast('error', 'อุณหภูมิร่างกายไม่อยู่ในเกณฑ์ที่เหมาะสม (30-45 °C)')
+      saving.value = false
+      return
+    }
+
+    const pulseNumRaw = parseDec(pulse.value)
+    if (pulseNumRaw !== null && (pulseNumRaw < 30 || pulseNumRaw > 250)) {
+      showToast('error', 'ชีพจรไม่อยู่ในเกณฑ์ที่เหมาะสม (30-250 bpm)')
+      saving.value = false
+      return
+    }
+
+    const rrNumRaw = parseDec(rr.value)
+    if (rrNumRaw !== null && (rrNumRaw < 5 || rrNumRaw > 60)) {
+      showToast('error', 'อัตราการหายใจไม่อยู่ในเกณฑ์ที่เหมาะสม (5-60 /min)')
+      saving.value = false
+      return
+    }
+
+    const spo2NumRaw = parseDec(spo2.value)
+    if (spo2NumRaw !== null && (spo2NumRaw < 50 || spo2NumRaw > 100)) {
+      showToast('error', 'ค่า SpO2 ไม่อยู่ในเกณฑ์ที่เหมาะสม (50-100 %)')
+      saving.value = false
+      return
+    }
+
+    // Check medicine stock
+    for (const item of selectedItems.value) {
+      if (item.quantity > (item.maxQuantity || 0)) {
+        showToast('error', `ยา ${item.name} มีสต็อกไม่เพียงพอ (คงเหลือ ${item.maxQuantity} ${item.unit})`)
+        saving.value = false
+        return
+      }
+      if (item.quantity <= 0) {
+        showToast('error', `กรุณาระบุจำนวนยา ${item.name} ให้ถูกต้อง`)
+        saving.value = false
+        return
+      }
+    }
+
     const photoFileName = await uploadPhotoToServer()
 
     const sessionRaw = localStorage.getItem('clinic_tdl_session')
@@ -399,18 +452,11 @@ const saveCheckup = async () => {
       throw new Error('Missing employee id')
     }
 
-    const parseDec = (v) => {
-      const n = parseFloat(String(v ?? '').toString().replace(',', '.'))
-      return Number.isFinite(n) ? Math.round(n * 100) / 100 : null
-    }
-    const clamp = (n, min, max) =>
-      n == null ? null : Math.max(min, Math.min(max, n))
-
-    const tempNum = clamp(parseDec(temp.value), -99.99, 99.99)
+    const tempNum = clamp(tempNumRaw, -99.99, 99.99)
     const bpText = (bp.value ?? '').toString().trim() || null
-    const pulseNum = parseDec(pulse.value)
-    const rrNum = parseDec(rr.value)
-    const spo2Num = clamp(parseDec(spo2.value), 0, 99.99)
+    const pulseNum = pulseNumRaw
+    const rrNum = rrNumRaw
+    const spo2Num = clamp(spo2NumRaw, 0, 99.99)
     const totalLeaveDaysNum =
       totalLeaveDays.value !== '' && totalLeaveDays.value != null
         ? Number(totalLeaveDays.value)
@@ -638,24 +684,24 @@ watch([leaveStart, leaveEnd], () => {
 
         <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div>
-            <label class="block text-xs font-medium mb-1">Temp</label>
-            <input v-model="temp" type="number" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs" />
+            <label class="block text-xs font-medium mb-1">BP (mmHg)</label>
+            <input v-model="bp" type="text" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="120/80" />
           </div>
           <div>
-            <label class="block text-xs font-medium mb-1">BP</label>
-            <input v-model="bp" type="text" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs" />
+            <label class="block text-xs font-medium mb-1">Pulse (bpm)</label>
+            <input v-model="pulse" type="number" min="30" max="250" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="72" />
           </div>
           <div>
-            <label class="block text-xs font-medium mb-1">Pulse</label>
-            <input v-model="pulse" type="number" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs" />
+            <label class="block text-xs font-medium mb-1">RR (/min)</label>
+            <input v-model="rr" type="number" min="5" max="60" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="16" />
           </div>
           <div>
-            <label class="block text-xs font-medium mb-1">RR</label>
-            <input v-model="rr" type="number" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs" />
+            <label class="block text-xs font-medium mb-1">Temp (°C)</label>
+            <input v-model="temp" type="number" step="0.1" min="30" max="45" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="36.5" />
           </div>
           <div>
-            <label class="block text-xs font-medium mb-1">SpO2</label>
-            <input v-model="spo2" type="number" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs" />
+            <label class="block text-xs font-medium mb-1">SpO2 (%)</label>
+            <input v-model="spo2" type="number" min="50" max="100" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="98" />
           </div>
         </div>
 
@@ -832,18 +878,18 @@ watch([leaveStart, leaveEnd], () => {
         <div
           v-for="med in medicineResults"
           :key="med.id"
-          class="flex items-center justify-between py-1 px-2 hover:bg-clinic-light dark:hover:bg-slate-800 rounded"
+          class="flex items-center justify-between py-1.5 px-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 cursor-pointer rounded-md transition-colors group"
+          @click="addMedicine(med)"
         >
           <div class="flex flex-col">
-            <span class="font-medium">{{ med.name }}</span>
+            <span class="font-medium text-slate-700 dark:text-slate-200 group-hover:text-clinic-blue transition-colors">{{ med.name }}</span>
             <span class="text-[11px] text-slate-500">
               Stock: {{ med.current_stock || 0 }} {{ med.unit }}
             </span>
           </div>
           <button
             type="button"
-            class="inline-flex items-center justify-center gap-1 rounded border border-clinic-border dark:border-slate-600 px-2 py-1 text-[11px]"
-            @click="addMedicine(med)"
+            class="inline-flex items-center justify-center gap-1 rounded border border-clinic-border dark:border-slate-600 px-2 py-1 text-[11px] bg-white dark:bg-slate-900 group-hover:border-clinic-blue group-hover:text-clinic-blue transition-all"
           >
             <i class="fa-solid fa-plus"></i>
             <span>Add</span>
@@ -871,13 +917,19 @@ watch([leaveStart, leaveEnd], () => {
                 {{ item.name }}
               </td>
               <td class="py-1.5 pr-3">
-                <input
-                  v-model.number="item.quantity"
-                  type="number"
-                  min="1"
-                  :max="item.maxQuantity || undefined"
-                  class="w-20 rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
-                />
+                <div class="flex flex-col gap-1">
+                  <input
+                    v-model.number="item.quantity"
+                    type="number"
+                    min="1"
+                    :max="item.maxQuantity || undefined"
+                    class="w-20 rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1"
+                    :class="item.quantity > (item.maxQuantity || 0) ? 'border-red-500 ring-red-500 bg-red-50' : 'border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-clinic-blue'"
+                  />
+                  <span v-if="item.quantity > (item.maxQuantity || 0)" class="text-[10px] text-red-500 font-medium">
+                    เกินสต็อก (คงเหลือ {{ item.maxQuantity }})
+                  </span>
+                </div>
               </td>
               <td class="py-1.5 pr-3">
                 {{ item.unit }}
