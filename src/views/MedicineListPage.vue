@@ -280,8 +280,8 @@ onMounted(loadMedicines)
       <table class="min-w-full text-xs">
         <thead>
           <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
-            <!-- <th class="py-2 pr-3">Image</th> -->
-            <th class="py-2 pr-3">SKU / ชื่อ</th>
+            <th class="py-2 pr-3">SKU</th>
+            <th class="py-2 pr-3">ชื่อ</th>
             <th class="py-2 pr-3">คงเหลือปัจจุบัน</th>
             <th class="py-2 pr-3">ผู้เพิ่มยาเข้ามา</th>
             <th class="py-2 pr-3">ผู้เติมสินค้าล่าสุด</th>
@@ -312,14 +312,18 @@ onMounted(loadMedicines)
               </a>
             </td> -->
             <td class="py-1.5 pr-3 font-medium">
-              <span class="text-slate-400 mr-2">{{ m.sku || '-' }}</span>
+              <span class="text-slate-400 mr-2">{{ m.sku || 'ไม่มี SKU' }}</span>
+            </td>
+            <td class="py-1.5 pr-3 font-medium">
               {{ m.name }}
             </td>
             <td class="py-1.5 pr-3">
-              <span :class="{'text-red-500 font-bold': m.current_stock <= (m.min_stock || 0)}">
-                {{ m.current_stock }}
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                <span :class="{'text-red-500 font-bold ': m.current_stock <= (m.min_stock || 0)}">
+                  {{ m.current_stock }}
+                </span>
+                <span class="ml-1 text-blue-700 dark:text-blue-300">{{ m.unit }}</span>
               </span>
-              <span class="text-slate-400 ml-1">{{ m.unit }}</span>
             </td>
             <td class="py-1.5 pr-3 text-slate-600 dark:text-slate-400">
               {{ m.creator?.full_name || '-' }}

@@ -28,10 +28,16 @@ const isAdmin = computed(() => session?.status === 'admin')
 const loadUsers = async () => {
   loading.value = true
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('system_users')
-      .select('id, username, full_name, emp_code, created_at, created_by')
-      .order('username')
+      .select('id, username, full_name, emp_code, created_at, created_by, status')
+
+    // Filter by status if not admin
+    if (!isAdmin.value) {
+      query = query.eq('status', 'user')
+    }
+
+    const { data, error } = await query.order('username')
     if (error) throw error
     const rows = data || []
     const ids = Array.from(new Set(rows.map((r) => r.created_by).filter((v) => !!v)))
@@ -176,6 +182,7 @@ onMounted(loadUsers)
             <th class="py-2 pr-3">Username</th>
             <th class="py-2 pr-3">รหัสพนักงาน</th>
             <th class="py-2 pr-3">ชื่อ-นามสกุล</th>
+            <th v-if="isAdmin" class="py-2 pr-3">สถานะ</th>
             <th class="py-2 pr-3">ผู้ที่เพิ่มเข้ามา</th>
             <th class="py-2 pr-3">เพิ่มเมื่อ</th>
           </tr>
@@ -189,6 +196,14 @@ onMounted(loadUsers)
             <td class="py-1.5 pr-3">{{ u.username }}</td>
             <td class="py-1.5 pr-3">{{ u.emp_code }}</td>
             <td class="py-1.5 pr-3">{{ u.full_name }}</td>
+            <td v-if="isAdmin" class="py-1.5 pr-3">
+              <span 
+                class="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                :class="u.status === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'"
+              >
+                {{ u.status }}
+              </span>
+            </td>
             <td class="py-1.5 pr-3">
               {{ u.creator_text }}
             </td>

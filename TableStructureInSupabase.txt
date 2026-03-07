@@ -8,7 +8,8 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
     full_name text,
     created_by uuid (REF with system_users.id),
     created_at timestamp,
-    status text
+    status text,
+    picture text
 
 2. employees
     id uuid,
@@ -24,7 +25,8 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
     congenital_disease text,
     drug_allergy text,
     created_at timestamp,
-    updated_at timestamp
+    updated_at timestamp,
+    created_by uuid (REF with system_users.id)
 
 3. medicine_list
     id uuid,

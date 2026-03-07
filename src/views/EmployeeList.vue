@@ -13,6 +13,10 @@ const department = ref('')
 const departments = ref([])
 const mode = ref('recent')
 
+const sessionRaw = localStorage.getItem('clinic_tdl_session')
+const session = sessionRaw ? JSON.parse(sessionRaw) : null
+const isAdmin = computed(() => session?.status === 'admin')
+
 const showSidebar = ref(false)
 const sidebarMode = ref('form')
 
@@ -89,7 +93,7 @@ const loadRecentEmployees = async () => {
   try {
     const { data, error } = await supabase
       .from('employees')
-      .select('*')
+      .select('*, creator:system_users!created_by(full_name, emp_code)')
       .order('created_at', { ascending: false })
       .limit(pageSize)
     if (error) throw error
@@ -111,7 +115,7 @@ const loadWithSearch = async () => {
     const to = from + pageSize - 1
     let query = supabase
       .from('employees')
-      .select('*', { count: 'exact' })
+      .select('*, creator:system_users!created_by(full_name, emp_code)', { count: 'exact' })
 
     const q = (search.value || '').trim()
     if (q) {
@@ -156,6 +160,10 @@ const goToPage = async (p) => {
 }
 
 const openSidebar = (modeName) => {
+  if (!isAdmin.value) {
+    showToast('error', 'คุณไม่มีสิทธิ์ในการเพิ่มหรือแก้ไขข้อมูลพนักงาน')
+    return
+  }
   sidebarMode.value = modeName
   showSidebar.value = true
   if (modeName === 'form') {
@@ -187,6 +195,10 @@ const closeSidebar = () => {
 }
 
 const handleSaveEmployee = async () => {
+  if (!isAdmin.value) {
+    showToast('error', 'คุณไม่มีสิทธิ์ในการบันทึกข้อมูลพนักงาน')
+    return
+  }
   const payload = {
     employee_code: (formData.value.employee_code || '').trim(),
     fullname: (formData.value.fullname || '').trim(),
@@ -218,7 +230,13 @@ const handleSaveEmployee = async () => {
       return
     }
 
-    const { error } = await supabase.from('employees').insert(payload)
+    // Add created_by from session
+    const finalPayload = {
+      ...payload,
+      created_by: session?.userId || null
+    }
+
+    const { error } = await supabase.from('employees').insert(finalPayload)
     if (error) throw error
 
     showToast('success', 'บันทึกข้อมูลพนักงานสำเร็จ')
@@ -327,6 +345,10 @@ const parseCsvText = (text) => {
 }
 
 const processUpload = async () => {
+  if (!isAdmin.value) {
+    showToast('error', 'คุณไม่มีสิทธิ์ในการอัพโหลดข้อมูลพนักงาน')
+    return
+  }
   if (!uploadFile.value) {
     showToast('error', 'กรุณาเลือกไฟล์ CSV ก่อน')
     return
@@ -430,6 +452,7 @@ const processUpload = async () => {
         status: (r.status || '').trim() || null,
         congenital_disease: (r.congenital_disease || '').trim() || null,
         drug_allergy: (r.drug_allergy || '').trim() || null,
+        created_by: session?.userId || null,
       }
 
       try {
@@ -580,6 +603,7 @@ onMounted(async () => {
         รายชื่อพนักงาน
       </h1>
       <button
+        v-if="isAdmin"
         type="button"
         class="inline-flex items-center justify-center gap-1 rounded-lg bg-clinic-blue text-white px-3 py-2 text-xs hover:bg-blue-700"
         @click="openSidebar('form')"
@@ -647,6 +671,7 @@ onMounted(async () => {
             <th class="py-2 pr-3">บริษัท</th>
             <th class="py-2 pr-3">เบอร์โทร</th>
             <th class="py-2 pr-3">สถานะ</th>
+            <th class="py-2 pr-3">ผู้บันทึก</th>
             <th class="py-2 pr-3">บันทึกเมื่อ</th>
           </tr>
         </thead>
@@ -688,6 +713,10 @@ onMounted(async () => {
               >
                 {{ e.status || 'ทำงานอยู่' }}
               </span>
+            </td>
+            <td class="py-1.5 pr-3 text-slate-600 dark:text-slate-400">
+              {{ e.creator?.full_name || '-' }}
+              <span class="text-purple-600 ml-1 dark:text-purple-400">{{ e.creator?.emp_code}}</span>
             </td>
             <td class="py-1.5 pr-3 whitespace-nowrap">
               {{ e.created_at ? new Date(e.created_at).toLocaleString() : '-' }}
