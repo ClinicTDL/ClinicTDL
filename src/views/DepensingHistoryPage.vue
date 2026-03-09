@@ -38,8 +38,10 @@ const loadData = async () => {
   try {
     let { data, error } = await tryFetch('dispensing_records')
     if (error) {
+      console.warn("Retrying with legacy table name 'depensing_records'");
       const alt = await tryFetch('depensing_records')
-      data = alt.data
+      data = alt.data;
+      if (!data) throw new Error("Data fetching failed on all endpoints.");
     }
     rawRecords.value = (data || []).map((r) => ({
       id: r.id,
@@ -52,7 +54,9 @@ const loadData = async () => {
       amount: Number(r?.amount || 0),
       diagnosis: r?.checkup?.diagnosis || '-',
       dispenser: r?.checkup?.creator?.full_name || '-',
-    }))
+    }));
+  } catch(err){
+    console.error("Pipeline Error:", err.message);
   } finally {
     loading.value = false
   }

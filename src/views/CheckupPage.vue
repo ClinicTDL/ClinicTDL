@@ -553,6 +553,23 @@ onMounted(() => {
   refreshCameras()
 })
 
+watch(isLeaveAllowed, (val) => {
+  const today = new Date()
+  const yyyy = today.getFullYear()
+  const mm = String(today.getMonth() + 1).padStart(2, '0')
+  const dd = String(today.getDate()).padStart(2, '0')
+  const isoDate = `${yyyy}-${mm}-${dd}`
+  if (val) {
+    leaveStart.value = isoDate
+    leaveEnd.value = isoDate
+    totalLeaveDays.value = '1'
+  } else {
+    leaveStart.value = ''
+    leaveEnd.value = ''
+    totalLeaveDays.value = ''
+  }
+})
+
 watch([leaveStart, leaveEnd], () => {
   const s = leaveStart.value
   const e = leaveEnd.value

@@ -74,6 +74,11 @@ const lastPatients = ref([])
 const mostSymptoms = ref([])
 const departmentStats = ref([]) // { department, patientCount, medicineCount }
 
+// Date Filter State
+const dateRange = ref('this-month') // this-month, last-month, this-week, last-week, custom
+const customStartDate = ref('')
+const customEndDate = ref('')
+
 const chartData = ref({
   labels: [],
   datasets: [],
@@ -203,7 +208,6 @@ const computeChangePercent = (current, previous) => {
 }
 
 const dayKey = (iso) => new Date(iso).toISOString().slice(0, 10)
-
 const topCounts = (rows, field, limit = 5) => {
   const map = new Map()
   for (const r of rows) {
@@ -221,131 +225,112 @@ const loadDashboardData = async () => {
   loading.value = true
   try {
     const now = new Date()
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+    let startDate, endDate
+    let prevStartDate, prevEndDate
+
+    // Calculate dates based on range
+    if (dateRange.value === 'this-month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+      prevStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      prevEndDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+    } else if (dateRange.value === 'last-month') {
+      startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+      prevStartDate = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+      prevEndDate = new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59)
+    } else if (dateRange.value === 'this-week') {
+      const day = now.getDay() || 7
+      startDate = new Date(now)
+      startDate.setHours(0, 0, 0, 0)
+      startDate.setDate(now.getDate() - day + 1)
+      endDate = new Date(now)
+      endDate.setHours(23, 59, 59, 999)
+      prevStartDate = new Date(startDate)
+      prevStartDate.setDate(startDate.getDate() - 7)
+      prevEndDate = new Date(endDate)
+      prevEndDate.setDate(endDate.getDate() - 7)
+    } else if (dateRange.value === 'last-week') {
+      const day = now.getDay() || 7
+      const thisWeekStart = new Date(now)
+      thisWeekStart.setHours(0, 0, 0, 0)
+      thisWeekStart.setDate(now.getDate() - day + 1)
+      startDate = new Date(thisWeekStart)
+      startDate.setDate(thisWeekStart.getDate() - 7)
+      endDate = new Date(thisWeekStart)
+      endDate.setDate(thisWeekStart.getDate() - 1)
+      endDate.setHours(23, 59, 59, 999)
+      prevStartDate = new Date(startDate)
+      prevStartDate.setDate(startDate.getDate() - 7)
+      prevEndDate = new Date(endDate)
+      prevEndDate.setDate(endDate.getDate() - 7)
+    } else if (dateRange.value === 'custom') {
+      startDate = customStartDate.value ? new Date(customStartDate.value) : new Date(now.getFullYear(), now.getMonth(), 1)
+      endDate = customEndDate.value ? new Date(customEndDate.value) : new Date(now)
+      endDate.setHours(23, 59, 59, 999)
+      // For custom, compare with previous equal duration
+      const diff = endDate.getTime() - startDate.getTime()
+      prevStartDate = new Date(startDate.getTime() - diff)
+      prevEndDate = new Date(startDate.getTime() - 1)
+    }
+
     const last15Start = new Date(now)
     last15Start.setDate(now.getDate() - 14)
 
     // Parallel Fetching
     const [
-      patientsThisMonthRes,
-      patientsLastMonthRes,
+      patientsRangeRes,
+      patientsPrevRes,
       totalStockRes,
-      importedThisMonthRes,
-      importedLastMonthRes,
-      dispensedThisMonthRes,
-      dispensedLastMonthRes,
+      importedRangeRes,
+      importedPrevRes,
+      dispensedRangeRes,
+      dispensedPrevRes,
       lastPatientsRes,
       kpiPatientsRes,
       usage15DaysRes,
-      // Fetch for department stats
-      allCheckupsMonthRes,
-      allDispensingMonthRes
+      allCheckupsRangeRes,
+      allDispensingRangeRes
     ] = await Promise.all([
-      // 0: Patients This Month
-      supabase
-        .from('checkups')
-        .select('id, created_at')
-        .gte('created_at', thisMonthStart.toISOString()),
-      // 1: Patients Last Month
-      supabase
-        .from('checkups')
-        .select('id, created_at')
-        .gte('created_at', lastMonthStart.toISOString())
-        .lte('created_at', lastMonthEnd.toISOString()),
-      // 2: Total Stock
+      supabase.from('checkups').select('id, created_at, diagnosis').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
+      supabase.from('checkups').select('id, created_at').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
       supabase.from('medicine_list').select('id, current_stock'),
-      // 3: Imported This Month
-      supabase
-        .from('stock_transactions')
-        .select('id, quantity, transaction_type, created_at')
-        .in('transaction_type', ['RECEIVE'])
-        .gte('created_at', thisMonthStart.toISOString()),
-      // 4: Imported Last Month
-      supabase
-        .from('stock_transactions')
-        .select('id, quantity, transaction_type, created_at')
-        .in('transaction_type', ['RECEIVE'])
-        .gte('created_at', lastMonthStart.toISOString())
-        .lte('created_at', lastMonthEnd.toISOString()),
-      // 5: Dispensed This Month
-      supabase
-        .from('dispensing_records')
-        .select('id, amount, created_at')
-        .gte('created_at', thisMonthStart.toISOString()),
-      // 6: Dispensed Last Month
-      supabase
-        .from('dispensing_records')
-        .select('id, amount, created_at')
-        .gte('created_at', lastMonthStart.toISOString())
-        .lte('created_at', lastMonthEnd.toISOString()),
-      // 7: Last 5 Patients
-      supabase
-        .from('checkups')
-        .select('id, created_at, diagnosis, employees(employee_code, fullname, department), dispensing_records(amount)')
-        .gte('created_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
-        .order('created_at', { ascending: false })
-        .limit(5),
-      // 8: KPI Patients (15 Days)
-      supabase
-        .from('checkups')
-        .select('id, created_at, symptoms, diagnosis, clinic_location')
-        .gte('created_at', last15Start.toISOString()),
-      // 9: Usage (15 Days)
-      supabase
-        .from('dispensing_records')
-        .select('id, created_at, amount')
-        .gte('created_at', last15Start.toISOString()),
-      // 10: All Checkups This Month (with Department)
-      supabase
-        .from('checkups')
-        .select('id, employees(department)')
-        .gte('created_at', thisMonthStart.toISOString()),
-      // 11: All Dispensing This Month (with Department via Checkup)
-      supabase
-        .from('dispensing_records')
-        .select('id, amount, checkup:checkups(employees(department))')
-        .gte('created_at', thisMonthStart.toISOString())
+      supabase.from('stock_transactions').select('id, quantity, created_at').eq('transaction_type', 'RECEIVE').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
+      supabase.from('stock_transactions').select('id, quantity, created_at').eq('transaction_type', 'RECEIVE').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
+      supabase.from('dispensing_records').select('id, amount, created_at').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
+      supabase.from('dispensing_records').select('id, amount, created_at').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
+      supabase.from('checkups').select('id, created_at, diagnosis, employees(employee_code, fullname, department), dispensing_records(amount)').order('created_at', { ascending: false }).limit(5),
+      supabase.from('checkups').select('id, created_at').gte('created_at', last15Start.toISOString()),
+      supabase.from('dispensing_records').select('id, created_at, amount').gte('created_at', last15Start.toISOString()),
+      supabase.from('checkups').select('id, employees(department)').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
+      supabase.from('dispensing_records').select('id, amount, checkup:checkups(employees(department))').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString())
     ])
 
-    // --- Process Summary ---
-    const patientsThisMonth = patientsThisMonthRes.data || []
-    const patientsLastMonth = patientsLastMonthRes.data || []
+    // Process Summary
+    const patientsRange = patientsRangeRes.data || []
+    const patientsPrev = patientsPrevRes.data || []
     const totalStockRows = totalStockRes.data || []
-    const importedThisMonth = importedThisMonthRes.data || []
-    const importedLastMonth = importedLastMonthRes.data || []
-    const dispensedThisMonth = dispensedThisMonthRes.data || []
-    const dispensedLastMonth = dispensedLastMonthRes.data || []
+    const importedRange = importedRangeRes.data || []
+    const importedPrev = importedPrevRes.data || []
+    const dispensedRange = dispensedRangeRes.data || []
+    const dispensedPrev = dispensedPrevRes.data || []
 
     const totalStockValue = totalStockRows.reduce((sum, r) => sum + (r.current_stock || 0), 0)
-    const importedThisMonthValue = importedThisMonth.reduce((sum, r) => sum + (r.quantity || 0), 0)
-    const importedLastMonthValue = importedLastMonth.reduce((sum, r) => sum + (r.quantity || 0), 0)
-    const dispensedThisMonthValue = dispensedThisMonth.reduce((sum, r) => sum + (r.amount || 0), 0)
-    const dispensedLastMonthValue = dispensedLastMonth.reduce((sum, r) => sum + (r.amount || 0), 0)
+    const importedRangeValue = importedRange.reduce((sum, r) => sum + (r.quantity || 0), 0)
+    const importedPrevValue = importedPrev.reduce((sum, r) => sum + (r.quantity || 0), 0)
+    const dispensedRangeValue = dispensedRange.reduce((sum, r) => sum + (r.amount || 0), 0)
+    const dispensedPrevValue = dispensedPrev.reduce((sum, r) => sum + (r.amount || 0), 0)
 
     summary.value = {
-      patientsThisMonth: {
-        value: patientsThisMonth.length,
-        change: computeChangePercent(patientsThisMonth.length, patientsLastMonth.length),
-      },
-      totalStock: {
-        value: totalStockValue,
-        change: 0,
-      },
-      importedThisMonth: {
-        value: importedThisMonthValue,
-        change: computeChangePercent(importedThisMonthValue, importedLastMonthValue),
-      },
-      dispensedThisMonth: {
-        value: dispensedThisMonthValue,
-        change: computeChangePercent(dispensedThisMonthValue, dispensedLastMonthValue),
-      },
+      patientsThisMonth: { value: patientsRange.length, change: computeChangePercent(patientsRange.length, patientsPrev.length) },
+      totalStock: { value: totalStockValue, change: 0 },
+      importedThisMonth: { value: importedRangeValue, change: computeChangePercent(importedRangeValue, importedPrevValue) },
+      dispensedThisMonth: { value: dispensedRangeValue, change: computeChangePercent(dispensedRangeValue, dispensedPrevValue) },
     }
-    prevImported.value = importedLastMonthValue
-    prevDispensed.value = dispensedLastMonthValue
+    prevImported.value = importedPrevValue
+    prevDispensed.value = dispensedPrevValue
 
-    // --- Process Last Patients ---
+    // Process Last Patients
     lastPatients.value = (lastPatientsRes.data || []).map((r) => ({
       ...r,
       fullname: r?.employees?.fullname || '-',
@@ -354,58 +339,38 @@ const loadDashboardData = async () => {
       amount: (r?.dispensing_records || []).reduce((sum, d) => sum + (d.amount || 0), 0),
     }))
 
-    // --- Process Most Symptoms ---
-    const thisMonthCheckups = kpiPatientsRes.data || []
-    mostSymptoms.value = topCounts(thisMonthCheckups, 'diagnosis', 7).map((r) => ({
-      symptoms: r.key,
-      count: r.count,
-    }))
-
-    // --- Process KPI Line Chart (15 Days) ---
+    // Process KPI Line Chart
     const patientByDay = {}
     const usageByDay = {}
-
-    ;(kpiPatientsRes.data || []).forEach((row) => {
-      const day = dayKey(row.created_at)
-      patientByDay[day] = (patientByDay[day] || 0) + 1
-    })
-
-    ;(usage15DaysRes.data || []).forEach((row) => {
-      const day = dayKey(row.created_at)
-      usageByDay[day] = (usageByDay[day] || 0) + (row.amount || 0)
-    })
+    ;(kpiPatientsRes.data || []).forEach(row => { patientByDay[dayKey(row.created_at)] = (patientByDay[dayKey(row.created_at)] || 0) + 1 })
+    ;(usage15DaysRes.data || []).forEach(row => { usageByDay[dayKey(row.created_at)] = (usageByDay[dayKey(row.created_at)] || 0) + (row.amount || 0) })
 
     const days = []
     const displayLabels = []
     for (let d = new Date(last15Start); d <= now; d.setDate(d.getDate() + 1)) {
       days.push(d.toISOString().slice(0, 10))
-      const dayNum = String(d.getDate()).padStart(2, '0')
-      const monthLabel = thaiMonthsShort[d.getMonth()] || ''
-      displayLabels.push(`${dayNum} ${monthLabel}`)
+      displayLabels.push(`${String(d.getDate()).padStart(2, '0')} ${thaiMonthsShort[d.getMonth()]}`)
     }
-
     kpiLabels.value = displayLabels
-    kpiPatients.value = days.map((d) => patientByDay[d] || 0)
-    kpiUsage.value = days.map((d) => usageByDay[d] || 0)
+    kpiPatients.value = days.map(d => patientByDay[d] || 0)
+    kpiUsage.value = days.map(d => usageByDay[d] || 0)
 
-    // --- Process Department Stats (New) ---
-    const depMap = {} // department -> { patientCount, medicineCount }
-    
-    // Count Patients
-    ;(allCheckupsMonthRes.data || []).forEach(r => {
+    // Process Symptoms from Range
+    const checkupsRange = patientsRangeRes.data || []
+    mostSymptoms.value = topCounts(checkupsRange, 'diagnosis', 7).map(r => ({ symptoms: r.key, count: r.count }))
+
+    // Process Department Stats
+    const depMap = {}
+    ;(allCheckupsRangeRes.data || []).forEach(r => {
       const dep = r?.employees?.department || 'Unknown'
       if (!depMap[dep]) depMap[dep] = { department: dep, patientCount: 0, medicineCount: 0 }
       depMap[dep].patientCount++
     })
-
-    // Count Medicine
-    ;(allDispensingMonthRes.data || []).forEach(r => {
+    ;(allDispensingRangeRes.data || []).forEach(r => {
       const dep = r?.checkup?.employees?.department || 'Unknown'
-      const amt = r.amount || 0
       if (!depMap[dep]) depMap[dep] = { department: dep, patientCount: 0, medicineCount: 0 }
-      depMap[dep].medicineCount += amt
+      depMap[dep].medicineCount += (r.amount || 0)
     })
-
     departmentStats.value = Object.values(depMap).sort((a, b) => b.patientCount - a.patientCount)
 
   } catch (err) {
@@ -414,6 +379,11 @@ const loadDashboardData = async () => {
     loading.value = false
   }
 }
+
+// Watch for date range changes
+watch([dateRange, customStartDate, customEndDate], () => {
+  loadDashboardData()
+})
 
 onMounted(loadDashboardData)
 
@@ -533,7 +503,7 @@ const exportDashboardPdf = async () => {
         <div class="card">
           <div class="card-title">นำเข้ายาเดือนนี้</div>
           <div class="card-val">${summary.value.importedThisMonth.value}</div>
-          <div class="card-diff ${summary.value.importedThisMonth.change >= 0 ? 'text-green' : 'text-red'}">
+          <div class="card-diff ${summary.value.importedThisMonth.change >= 0 ? 'text-red' : 'text-green'}">
              ${diffText(summary.value.importedThisMonth.value, prevImported.value)}
           </div>
         </div>
@@ -635,18 +605,57 @@ const exportDashboardPdf = async () => {
 
 <template>
   <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
       <h1 class="text-xl font-semibold text-slate-900 dark:text-white">
         Dashboard (ภาพรวม)
       </h1>
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-clinic-blue text-white hover:bg-blue-700 transition-colors shadow-sm"
-        @click="exportDashboardPdf"
-      >
-        <i class="fa-solid fa-file-pdf"></i>
-        <span>ส่งออก PDF</span>
-      </button>
+      
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Date Filter Presets -->
+        <div class="inline-flex bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-lg p-1 shadow-sm">
+          <button 
+            v-for="preset in [
+              { label: 'เดือนนี้', value: 'this-month' },
+              { label: 'เดือนก่อน', value: 'last-month' },
+              { label: 'อาทิตย์นี้', value: 'this-week' },
+              { label: 'อาทิตย์ก่อน', value: 'last-week' },
+              { label: 'กำหนดเอง', value: 'custom' }
+            ]"
+            :key="preset.value"
+            @click="dateRange = preset.value"
+            class="px-3 py-1.5 text-[10px] font-medium rounded-md transition-all"
+            :class="dateRange === preset.value 
+              ? 'bg-clinic-blue text-white shadow-sm' 
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'"
+          >
+            {{ preset.label }}
+          </button>
+        </div>
+
+        <!-- Custom Date Inputs -->
+        <div v-if="dateRange === 'custom'" class="flex items-center gap-2 animate-fade-in">
+          <input 
+            v-model="customStartDate"
+            type="date"
+            class="px-2 py-1.5 text-[10px] rounded-lg border border-clinic-border dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-clinic-blue outline-none"
+          />
+          <span class="text-slate-400 text-[10px]">ถึง</span>
+          <input 
+            v-model="customEndDate"
+            type="date"
+            class="px-2 py-1.5 text-[10px] rounded-lg border border-clinic-border dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-clinic-blue outline-none"
+          />
+        </div>
+
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-clinic-blue text-white hover:bg-blue-700 transition-colors shadow-sm ml-auto"
+          @click="exportDashboardPdf"
+        >
+          <i class="fa-solid fa-file-pdf"></i>
+          <span>ส่งออก PDF</span>
+        </button>
+      </div>
     </div>
 
     <!-- Summary Cards -->
@@ -654,7 +663,7 @@ const exportDashboardPdf = async () => {
       <!-- Patients -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">ผู้ป่วยเดือนนี้</span>
+          <span class="text-xs text-slate-500 font-medium">ผู้ป่วย (ตามช่วงเวลา)</span>
           <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
             <i class="fa-solid fa-user-injured text-clinic-blue dark:text-blue-400 text-sm"></i>
           </div>
@@ -667,7 +676,7 @@ const exportDashboardPdf = async () => {
           :class="summary.patientsThisMonth.change > 0 ? 'text-red-500' : 'text-emerald-500'"
         >
           <i :class="summary.patientsThisMonth.change > 0 ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-trend-down'"></i>
-          {{ Math.abs(summary.patientsThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
+          {{ Math.abs(summary.patientsThisMonth.change).toFixed(1) }}% เทียบช่วงก่อนหน้า
         </div>
       </div>
 
@@ -690,7 +699,7 @@ const exportDashboardPdf = async () => {
       <!-- Import -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">นำเข้าเดือนนี้</span>
+          <span class="text-xs text-slate-500 font-medium">นำเข้า (ตามช่วงเวลา)</span>
           <div class="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
             <i class="fa-solid fa-truck-medical text-emerald-600 dark:text-emerald-400 text-sm"></i>
           </div>
@@ -703,14 +712,14 @@ const exportDashboardPdf = async () => {
           :class="summary.importedThisMonth.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
         >
           <i :class="summary.importedThisMonth.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-          {{ Math.abs(summary.importedThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
+          {{ Math.abs(summary.importedThisMonth.change).toFixed(1) }}% เทียบช่วงก่อนหน้า
         </div>
       </div>
 
       <!-- Dispensed -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">จ่ายยาเดือนนี้</span>
+          <span class="text-xs text-slate-500 font-medium">จ่ายยา (ตามช่วงเวลา)</span>
           <div class="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center">
             <i class="fa-solid fa-prescription-bottle-medical text-orange-600 dark:text-orange-400 text-sm"></i>
           </div>
@@ -723,7 +732,7 @@ const exportDashboardPdf = async () => {
           :class="summary.dispensedThisMonth.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
         >
           <i :class="summary.dispensedThisMonth.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-          {{ Math.abs(summary.dispensedThisMonth.change).toFixed(1) }}% เทียบเดือนก่อน
+          {{ Math.abs(summary.dispensedThisMonth.change).toFixed(1) }}% เทียบช่วงก่อนหน้า
         </div>
       </div>
     </div>

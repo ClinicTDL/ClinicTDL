@@ -42,7 +42,7 @@ const menuItems = computed(() => {
     { name: 'ประวัติการจ่ายยา', icon: 'fa-hand-holding-medical', routeName: 'dispensing-history' },
     { name: 'ประวัติการนำเข้ายา', icon: 'fa-upload', routeName: 'import-history' },
     { name: 'ข้อมูลพนักงาน', icon: 'fa-user', routeName: 'employee-list' },
-    { name: 'ผู้นำใข้ระบบ', icon: 'fa-users-gear', routeName: 'system-users' },
+    { name: 'ผู้นำใช้ระบบ', icon: 'fa-users-gear', routeName: 'system-users' },
   ]
   
   if (isAdmin.value) {

@@ -33,7 +33,7 @@ import { toasts, confirmState, closeConfirm } from '../stores/ui'
           <div class="flex items-center justify-end gap-2">
             <button
               type="button"
-              class="px-3 py-2 rounded-lg text-xs border border-clinic-border dark:border-slate-700"
+              class="px-3 py-2 rounded-lg text-xs border border-clinic-border dark:border-slate-700 dark:text-slate-300"
               @click="closeConfirm(false)"
             >
               ยกเลิก
