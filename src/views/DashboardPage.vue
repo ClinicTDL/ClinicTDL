@@ -69,9 +69,18 @@ const prevImported = ref(0)
 const prevDispensed = ref(0)
 const lineCanvasImage = ref('')
 const barCanvasImage = ref('')
+const kpiUseFilter = ref(false)
+const dayKeyLocal = (d) => {
+  const dt = new Date(d)
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, '0')
+  const da = String(dt.getDate()).padStart(2, '0')
+  return `${y}-${m}-${da}`
+}
 
 const lastPatients = ref([])
 const mostSymptoms = ref([])
+const medicineStats = ref([]) // { name, diagnosis, dispensedCount }
 const departmentStats = ref([]) // { department, patientCount, medicineCount }
 
 // Date Filter State
@@ -276,6 +285,9 @@ const loadDashboardData = async () => {
 
     const last15Start = new Date(now)
     last15Start.setDate(now.getDate() - 14)
+    const kpiStart = kpiUseFilter.value ? startDate : last15Start
+    const kpiEnd = kpiUseFilter.value ? endDate : now
+    const kpiSpanDays = Math.floor((kpiEnd.getTime() - kpiStart.getTime()) / 86400000) + 1
 
     // Parallel Fetching
     const [
@@ -300,10 +312,10 @@ const loadDashboardData = async () => {
       supabase.from('dispensing_records').select('id, amount, created_at').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
       supabase.from('dispensing_records').select('id, amount, created_at').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
       supabase.from('checkups').select('id, created_at, diagnosis, employees(employee_code, fullname, department), dispensing_records(amount)').order('created_at', { ascending: false }).limit(5),
-      supabase.from('checkups').select('id, created_at').gte('created_at', last15Start.toISOString()),
-      supabase.from('dispensing_records').select('id, created_at, amount').gte('created_at', last15Start.toISOString()),
+      supabase.from('checkups').select('id, created_at').gte('created_at', kpiStart.toISOString()).lte('created_at', kpiEnd.toISOString()),
+      supabase.from('dispensing_records').select('id, created_at, amount').gte('created_at', kpiStart.toISOString()).lte('created_at', kpiEnd.toISOString()),
       supabase.from('checkups').select('id, employees(department)').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
-      supabase.from('dispensing_records').select('id, amount, checkup:checkups(employees(department))').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString())
+      supabase.from('dispensing_records').select('id, amount, medicine:medicine_list(name), checkup:checkups(diagnosis, employees(department))').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString())
     ])
 
     // Process Summary
@@ -339,38 +351,121 @@ const loadDashboardData = async () => {
       amount: (r?.dispensing_records || []).reduce((sum, d) => sum + (d.amount || 0), 0),
     }))
 
-    // Process KPI Line Chart
     const patientByDay = {}
     const usageByDay = {}
-    ;(kpiPatientsRes.data || []).forEach(row => { patientByDay[dayKey(row.created_at)] = (patientByDay[dayKey(row.created_at)] || 0) + 1 })
-    ;(usage15DaysRes.data || []).forEach(row => { usageByDay[dayKey(row.created_at)] = (usageByDay[dayKey(row.created_at)] || 0) + (row.amount || 0) })
+    ;(kpiPatientsRes.data || []).forEach(row => {
+      const key = dayKeyLocal(row.created_at)
+      patientByDay[key] = (patientByDay[key] || 0) + 1
+    })
+    ;(usage15DaysRes.data || []).forEach(row => {
+      const key = dayKeyLocal(row.created_at)
+      usageByDay[key] = (usageByDay[key] || 0) + (row.amount || 0)
+    })
 
-    const days = []
-    const displayLabels = []
-    for (let d = new Date(last15Start); d <= now; d.setDate(d.getDate() + 1)) {
-      days.push(d.toISOString().slice(0, 10))
-      displayLabels.push(`${String(d.getDate()).padStart(2, '0')} ${thaiMonthsShort[d.getMonth()]}`)
+    const useMonthly = kpiSpanDays > 60
+    if (!useMonthly) {
+      const days = []
+      const displayLabels = []
+      const dIter = new Date(kpiStart)
+      dIter.setHours(0,0,0,0)
+      const endIter = new Date(kpiEnd)
+      endIter.setHours(0,0,0,0)
+      for (let d = dIter; d <= endIter; d = new Date(d.getTime() + 86400000)) {
+        const key = dayKeyLocal(d)
+        days.push(key)
+        displayLabels.push(`${String(d.getDate()).padStart(2, '0')} ${thaiMonthsShort[d.getMonth()]}`)
+      }
+      kpiLabels.value = displayLabels
+      kpiPatients.value = days.map(d => patientByDay[d] || 0)
+      kpiUsage.value = days.map(d => usageByDay[d] || 0)
+    } else {
+      const monthKey = (key) => {
+        const parts = String(key).split('-')
+        const y = Number(parts[0])
+        const m = Number(parts[1])
+        return `${y}-${String(m).padStart(2,'0')}`
+      }
+      const patientByMonth = {}
+      const usageByMonth = {}
+      Object.entries(patientByDay).forEach(([d, cnt]) => {
+        const mk = monthKey(d)
+        patientByMonth[mk] = (patientByMonth[mk] || 0) + cnt
+      })
+      Object.entries(usageByDay).forEach(([d, amt]) => {
+        const mk = monthKey(d)
+        usageByMonth[mk] = (usageByMonth[mk] || 0) + amt
+      })
+      const labels = []
+      const monthsKeys = []
+      const mStart = new Date(kpiStart.getFullYear(), kpiStart.getMonth(), 1)
+      const mEnd = new Date(kpiEnd.getFullYear(), kpiEnd.getMonth(), 1)
+      for (let m = new Date(mStart); m <= mEnd; m.setMonth(m.getMonth()+1)) {
+        const mk = `${m.getFullYear()}-${String(m.getMonth()+1).padStart(2,'0')}`
+        monthsKeys.push(mk)
+        labels.push(`${thaiMonthsShort[m.getMonth()]} ${String(m.getFullYear()).slice(2)}`)
+      }
+      kpiLabels.value = labels
+      kpiPatients.value = monthsKeys.map(k => patientByMonth[k] || 0)
+      kpiUsage.value = monthsKeys.map(k => usageByMonth[k] || 0)
     }
-    kpiLabels.value = displayLabels
-    kpiPatients.value = days.map(d => patientByDay[d] || 0)
-    kpiUsage.value = days.map(d => usageByDay[d] || 0)
 
     // Process Symptoms from Range
     const checkupsRange = patientsRangeRes.data || []
     mostSymptoms.value = topCounts(checkupsRange, 'diagnosis', 7).map(r => ({ symptoms: r.key, count: r.count }))
 
-    // Process Department Stats
+    // Process Medicine and Department Stats
+    const medMap = {}
     const depMap = {}
+
+    // Process Department Patient Count
     ;(allCheckupsRangeRes.data || []).forEach(r => {
       const dep = r?.employees?.department || 'Unknown'
       if (!depMap[dep]) depMap[dep] = { department: dep, patientCount: 0, medicineCount: 0 }
       depMap[dep].patientCount++
     })
+
     ;(allDispensingRangeRes.data || []).forEach(r => {
+      // For Medicine Stats
+      const medName = r?.medicine?.name || 'Unknown'
+      const diagnosis = r?.checkup?.diagnosis || '-'
+      if (!medMap[medName]) {
+        medMap[medName] = { 
+          name: medName, 
+          dispensedCount: 0,
+          diagnoses: {} 
+        }
+      }
+      medMap[medName].dispensedCount += (r.amount || 0)
+      if (diagnosis !== '-') {
+        medMap[medName].diagnoses[diagnosis] = (medMap[medName].diagnoses[diagnosis] || 0) + 1
+      }
+
+      // For Department Medicine Count
       const dep = r?.checkup?.employees?.department || 'Unknown'
       if (!depMap[dep]) depMap[dep] = { department: dep, patientCount: 0, medicineCount: 0 }
       depMap[dep].medicineCount += (r.amount || 0)
     })
+    
+    // Finalize Medicine Stats
+    medicineStats.value = Object.values(medMap)
+      .map(m => {
+        let topDiag = '-'
+        let maxCount = 0
+        for (const [diag, count] of Object.entries(m.diagnoses)) {
+          if (count > maxCount) {
+            maxCount = count
+            topDiag = diag
+          }
+        }
+        return {
+          name: m.name,
+          dispensedCount: m.dispensedCount,
+          diagnosis: topDiag
+        }
+      })
+      .sort((a, b) => b.dispensedCount - a.dispensedCount)
+
+    // Finalize Department Stats
     departmentStats.value = Object.values(depMap).sort((a, b) => b.patientCount - a.patientCount)
 
   } catch (err) {
@@ -382,6 +477,7 @@ const loadDashboardData = async () => {
 
 // Watch for date range changes
 watch([dateRange, customStartDate, customEndDate], () => {
+  kpiUseFilter.value = true
   loadDashboardData()
 })
 
@@ -518,9 +614,9 @@ const exportDashboardPdf = async () => {
     </div>
 
     <div class="section">
-      <h2>สถิติรายแผนก (Top Departments)</h2>
       <div style="display: flex; gap: 16px;">
         <div style="flex: 1;">
+          <h2>สถิติรายแผนก (Top Departments)</h2>
           <table>
             <thead>
               <tr>
@@ -548,6 +644,29 @@ const exportDashboardPdf = async () => {
            </div>
         </div>
       </div>
+    </div>
+
+    <div class="section">
+      <h2>รายการยาที่ใช้มากที่สุด (Top Medicines)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>รายการยา</th>
+            <th>อาการที่พบบ่อย</th>
+            <th class="text-right">จำนวนที่จ่าย</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${medicineStats.value.slice(0, 10).map(m => `
+            <tr>
+              <td>${m.name}</td>
+              <td>${m.diagnosis}</td>
+              <td class="text-right">${m.dispensedCount}</td>
+            </tr>
+          `).join('')}
+          ${medicineStats.value.length === 0 ? '<tr><td colspan="3" class="muted text-center">ไม่มีข้อมูล</td></tr>' : ''}
+        </tbody>
+      </table>
     </div>
 
     <div class="section">
@@ -812,30 +931,35 @@ const exportDashboardPdf = async () => {
         </div>
       </div>
 
-      <!-- Department Stats Table -->
+      <!-- Medicine Stats Table -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm">
         <h2 class="text-sm font-semibold text-slate-800 dark:text-white mb-2">
-          <i class="fa-solid fa-building text-indigo-500 mr-2"></i>
-          รายละเอียดตามแผนก
+          <i class="fa-solid fa-pills text-indigo-500 mr-2"></i>
+          รายการยาที่ใช้มากที่สุด (Top 7)
         </h2>
         <div class="overflow-x-auto max-h-[300px]">
           <table class="min-w-full text-xs">
             <thead class="sticky top-0 bg-white dark:bg-slate-800 z-10">
               <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
-                <th class="py-2 pr-3">แผนก</th>
-                <th class="py-2 pr-3 text-right">ผู้ป่วย</th>
-                <th class="py-2 pr-3 text-right">ยา (หน่วย)</th>
+                <th class="py-2 pr-3">รายการยา</th>
+                <th class="py-2 pr-3">อาการหลัก</th>
+                <th class="py-2 pr-3 text-right">จำนวนจ่าย</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="d in departmentStats.slice(0, 8)"
-                :key="d.department"
+                v-for="m in medicineStats.slice(0, 7)"
+                :key="m.name"
                 class="border-b border-clinic-border/60 dark:border-slate-800 last:border-0"
               >
-                <td class="py-2 pr-3 font-medium">{{ d.department }}</td>
-                <td class="py-2 pr-3 text-right">{{ d.patientCount }}</td>
-                <td class="py-2 pr-3 text-right text-slate-600 dark:text-slate-400">{{ d.medicineCount }}</td>
+                <td class="py-2 pr-3 font-medium text-slate-700 dark:text-white">{{ m.name }}</td>
+                <td class="py-2 pr-3 text-slate-500 italic">{{ m.diagnosis }}</td>
+                <td class="py-2 pr-3 text-right font-bold">{{ m.dispensedCount }}</td>
+              </tr>
+              <tr v-if="!medicineStats.length">
+                <td colspan="3" class="py-8 text-center text-slate-400">
+                  ไม่มีข้อมูลการจ่ายยา
+                </td>
               </tr>
             </tbody>
           </table>
@@ -848,7 +972,7 @@ const exportDashboardPdf = async () => {
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-sm font-semibold text-slate-800 dark:text-white">
           <i class="fa-regular fa-clock text-blue-500 mr-2"></i>
-          ผู้ป่วยล่าสุด (วันนี้)
+          ผู้ป่วยล่าสุด
         </h2>
       </div>
       <div class="overflow-x-auto">

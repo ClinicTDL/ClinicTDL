@@ -37,19 +37,14 @@ const handleLogin = async () => {
       return
     }
 
-    const expiresInDays = rememberMe.value ? 7 : 1
-    const expiresAt = Date.now() + expiresInDays * 24 * 60 * 60 * 1000
-
     const session = {
       userId: data.id,
       username: data.username,
       employee_code: data.emp_code,
       full_name: data.full_name || data.username,
       status: data.status,
-      expiresAt,
     }
-
-    localStorage.setItem('clinic_tdl_session', JSON.stringify(session))
+    document.cookie = `clinic_tdl_session=${encodeURIComponent(JSON.stringify(session))}; path=/; samesite=Lax`
     if (session.status === 'admin') {
       router.push({ name: 'admin-dashboard' })
     } else {

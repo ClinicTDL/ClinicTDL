@@ -330,7 +330,7 @@ const loadDashboardData = async () => {
       // 13: Low stock list
       supabase
         .from('medicine_list')
-        .select('id, name, unit, current_stock')
+        .select('id, name, unit, current_stock, group')
         .order('current_stock', { ascending: true })
         .limit(20),
     ])
@@ -446,7 +446,10 @@ const loadDashboardData = async () => {
       },
     }))
     const threshold = LOW_STOCK_THRESHOLD
-    const lowRows = (lowStockRes.data || []).filter(m => Number(m?.current_stock ?? 0) <= threshold)
+    const lowRows = (lowStockRes.data || []).filter(m =>
+      (m?.group || '').toString().trim() !== 'เครื่องมือแพทย์' &&
+      Number(m?.current_stock ?? 0) <= threshold
+    )
     lowStockList.value = lowRows.slice(0, 10)
 
   } catch (err) {

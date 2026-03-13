@@ -24,6 +24,14 @@ const leaveEnd = ref('')
 const totalLeaveDays = ref('')
 const isDrugAllergy = ref(false)
 const isHaveConditions = ref(false)
+const drugAllergyText = ref('')
+const congenitalDiseaseText = ref('')
+
+const toTitleCaseEng = (s) =>
+  (s || '').replace(/\b([A-Za-z])([A-Za-z]*)\b/g, (_, a, b) => a.toUpperCase() + b.toLowerCase())
+const formatDiagnosisOnBlur = () => {
+  diagnosis.value = toTitleCaseEng(diagnosis.value || '')
+}
 
 const videoRef = ref(null)
 const canvasRef = ref(null)
@@ -79,7 +87,7 @@ watch(employeeCode, async (val) => {
     try {
       const { data, error } = await supabase
         .from('employees')
-        .select('id, employee_code, fullname, department, project, status')
+        .select('id, employee_code, fullname, department, project, status, congenital_disease, drug_allergy')
         .or(`employee_code.ilike.%${q}%,fullname.ilike.%${q}%`)
         .order('employee_code', { ascending: true })
         .limit(10)
@@ -236,11 +244,70 @@ const triggerFileSelect = () => {
 const onFileSelected = async (e) => {
   const file = e.target.files?.[0]
   if (!file) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    photoDataUrl.value = reader.result
+  const toDataURL = (blob) =>
+    new Promise((resolve) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(fr.result)
+      fr.readAsDataURL(blob)
+    })
+  const baseDataUrl = await new Promise((resolve) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(fr.result)
+    fr.readAsDataURL(file)
+  })
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image()
+      i.onload = () => resolve(i)
+      i.onerror = reject
+      i.src = baseDataUrl
+    })
+    const ow = img.naturalWidth || img.width || 1280
+    const oh = img.naturalHeight || img.height || 720
+    const maxDim = 1024
+    let rw = ow
+    let rh = oh
+    if (ow > oh && ow > maxDim) {
+      rw = maxDim
+      rh = Math.round((oh * maxDim) / ow)
+    } else if (oh >= ow && oh > maxDim) {
+      rh = maxDim
+      rw = Math.round((ow * maxDim) / oh)
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = rw
+    canvas.height = rh
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(img, 0, 0, rw, rh)
+    const qualities = [0.8, 0.7, 0.6, 0.5, 0.4]
+    let best = null
+    for (const q of qualities) {
+      const webpBlob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, 'image/webp', q),
+      )
+      const jpegBlob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, 'image/jpeg', q),
+      )
+      const pick =
+        webpBlob && jpegBlob
+          ? webpBlob.size <= jpegBlob.size
+            ? { blob: webpBlob, mime: 'image/webp' }
+            : { blob: jpegBlob, mime: 'image/jpeg' }
+          : jpegBlob
+          ? { blob: jpegBlob, mime: 'image/jpeg' }
+          : { blob: webpBlob, mime: 'image/webp' }
+      if (!best || pick.blob.size < best.blob.size) best = pick
+      if (pick.blob.size <= 100 * 1024) {
+        const out = await toDataURL(pick.blob)
+        photoDataUrl.value = out
+        return
+      }
+    }
+    const out = await toDataURL(best.blob)
+    photoDataUrl.value = out
+  } catch {
+    photoDataUrl.value = baseDataUrl
   }
-  reader.readAsDataURL(file)
 }
 
 const searchMedicines = async () => {
@@ -250,10 +317,11 @@ const searchMedicines = async () => {
       .from('medicine_list')
       .select('*')
       .ilike('name', `%${medicineSearch.value}%`)
+      .neq('group', 'เครื่องมือแพทย์')
       .limit(20)
     const { data, error } = await query
     if (error) throw error
-    medicineResults.value = data || []
+    medicineResults.value = (data || []).filter((m) => (m?.group || '').trim() !== 'เครื่องมือแพทย์')
   } catch (err) {
     console.error('Search medicines error', err)
   } finally {
@@ -261,18 +329,93 @@ const searchMedicines = async () => {
   }
 }
 
+const roundCount = ref(0)
+const roundText = ref('')
+const updateMonthlyRound = async () => {
+  try {
+    let empId = employeeInfo.value?.id || null
+    if (!empId && employeeCode.value) {
+      const { data: empLookup } = await supabase
+        .from('employees')
+        .select('id')
+        .eq('employee_code', employeeCode.value)
+        .maybeSingle()
+      empId = empLookup?.id || null
+    }
+    if (!empId) {
+      roundCount.value = 0
+      roundText.value = ''
+      return
+    }
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    const { count } = await supabase
+      .from('checkups')
+      .select('*', { count: 'exact', head: true })
+      .eq('employee_id', empId)
+      .gte('created_at', start.toISOString())
+      .lte('created_at', end.toISOString())
+    const next = (count || 0) + 1
+    roundCount.value = next
+    roundText.value = `ครั้งที่ ${next} ของเดือนนี้`
+  } catch {
+    roundCount.value = 0
+    roundText.value = ''
+  }
+}
+
+watch(() => employeeInfo.value?.id, () => {
+  updateMonthlyRound()
+})
+watch(employeeCode, () => {
+  updateMonthlyRound()
+})
+
+watch(isDrugAllergy, (val) => {
+  if (val && !String(drugAllergyText.value || '').trim()) {
+    drugAllergyText.value = employeeInfo.value?.drug_allergy || ''
+  }
+})
+watch(isHaveConditions, (val) => {
+  if (val && !String(congenitalDiseaseText.value || '').trim()) {
+    congenitalDiseaseText.value = employeeInfo.value?.congenital_disease || ''
+  }
+})
+
+const getUnitCap = (unitRaw) => {
+  const unit = (unitRaw || '').toString().trim()
+  if (unit === 'แผง') return 3
+  if (unit === 'เม็ด') return 10
+  if (unit === 'ซอง') return 3
+  if (unit === 'หลอด') return 3
+  if (unit === 'ถุง') return 1
+  return 3
+}
+
 const addMedicine = (med) => {
+  if ((med?.group || '').toString().trim() === 'เครื่องมือแพทย์') {
+    showToast('error', 'อุปกรณ์/เครื่องมือแพทย์ไม่สามารถจ่ายในหน้านี้ได้')
+    return
+  }
+  if (selectedItems.value.length >= 7) {
+    showToast('error', 'สามารถเพิ่มรายการยาได้สูงสุด 7 รายการ')
+    return
+  }
   if (selectedItems.value.some((i) => i.id === med.id)) return
-  if ((med.current_stock || 0) <= 0) {
+  const stock = Number(med.current_stock || 0)
+  if (stock <= 0) {
     showToast('error', `ยา ${med.name} หมดสต็อก ไม่สามารถจ่ายได้`)
     return
   }
+  const unitCap = getUnitCap(med.unit)
+  const maxQ = Math.max(0, Math.min(stock, unitCap))
   selectedItems.value.push({
     id: med.id,
     name: med.name,
     unit: med.unit,
-    quantity: 1,
-    maxQuantity: med.current_stock || 0,
+    quantity: Math.min(1, maxQ) || 1,
+    maxQuantity: maxQ,
   })
 }
 
@@ -435,8 +578,15 @@ const saveCheckup = async () => {
 
     const photoFileName = await uploadPhotoToServer()
 
-    const sessionRaw = localStorage.getItem('clinic_tdl_session')
-    const session = sessionRaw ? JSON.parse(sessionRaw) : null
+    const getCookie = (name) => {
+      const v = document.cookie.split('; ').find((row) => row.startsWith(name + '='))
+      return v ? v.split('=')[1] : ''
+    }
+    let session = null
+    try {
+      const raw = getCookie('clinic_tdl_session') || localStorage.getItem('clinic_tdl_session')
+      session = raw ? JSON.parse(decodeURIComponent(raw)) : null
+    } catch { session = null }
 
     let employeeIdToSave = employeeInfo.value?.id || null
     if (!employeeIdToSave && employeeCode.value) {
@@ -462,11 +612,14 @@ const saveCheckup = async () => {
         ? Number(totalLeaveDays.value)
         : null
 
+    diagnosis.value = toTitleCaseEng(diagnosis.value || '')
+
     const { data: checkup, error: checkupError } = await supabase
       .from('checkups')
       .insert({
         employee_id: employeeIdToSave,
         clinic_location: clinicLocation.value || null,
+        round: roundText.value || null,
         temp: tempNum,
         bp: bpText,
         pulse: pulseNum,
@@ -487,6 +640,33 @@ const saveCheckup = async () => {
       .single()
 
     if (checkupError) throw checkupError
+
+    const allergyText = String(drugAllergyText.value || '').trim()
+    const diseaseText = String(congenitalDiseaseText.value || '').trim()
+    const empUpdate = {}
+    if (isDrugAllergy.value && allergyText) {
+      empUpdate.drug_allergy = allergyText
+    }
+    if (isHaveConditions.value && diseaseText) {
+      empUpdate.congenital_disease = diseaseText
+    }
+    if (Object.keys(empUpdate).length > 0) {
+      empUpdate.updated_at = new Date()
+      const { data: empRes, error: empErr } = await supabase
+        .from('employees')
+        .update(empUpdate)
+        .eq('id', employeeIdToSave)
+        .select('id, drug_allergy, congenital_disease')
+      if (empErr) throw empErr
+      if (!empRes || !empRes.length) throw new Error('ไม่พบพนักงานสำหรับอัปเดต')
+      const row = empRes[0]
+      employeeInfo.value = {
+        ...(employeeInfo.value || {}),
+        drug_allergy: row.drug_allergy,
+        congenital_disease: row.congenital_disease,
+      }
+      showToast('success', 'อัปเดตข้อมูลแพ้ยา/โรคประจำตัวของพนักงานสำเร็จ')
+    }
 
     if (selectedItems.value.length) {
       const { error: dispensingError } = await supabase
@@ -535,6 +715,8 @@ const saveCheckup = async () => {
     totalLeaveDays.value = ''
     isDrugAllergy.value = false
     isHaveConditions.value = false
+    drugAllergyText.value = ''
+    congenitalDiseaseText.value = ''
     selectedItems.value = []
     photoDataUrl.value = ''
     medicineSearch.value = ''
@@ -591,9 +773,9 @@ watch([leaveStart, leaveEnd], () => {
 
 <template>
   <div class="space-y-4">
-    <h1 class="text-xl font-semibold text-slate-900 dark:text-white">
+    <!-- <h1 class="text-xl font-semibold text-slate-900 dark:text-white">
       Medical Checkup & Dispensing
-    </h1>
+    </h1> -->
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
       <div
@@ -699,6 +881,15 @@ watch([leaveStart, leaveEnd], () => {
           </div>
         </div>
 
+        <div v-if="employeeInfo?.drug_allergy || employeeInfo?.congenital_disease" class="rounded-lg border border-clinic-border dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs">
+          <div v-if="employeeInfo?.drug_allergy" class="text-red-600 dark:text-red-400">
+            แพ้ยา: {{ employeeInfo.drug_allergy }}
+          </div>
+          <div v-if="employeeInfo?.congenital_disease" class="text-slate-700 dark:text-slate-300">
+            โรคประจำตัว: {{ employeeInfo.congenital_disease }}
+          </div>
+        </div>
+
         <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div>
             <label class="block text-xs font-medium mb-1">BP (mmHg)</label>
@@ -739,6 +930,7 @@ watch([leaveStart, leaveEnd], () => {
               rows="3"
               placeholder="วินิจฉัย"
               class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              @blur="formatDiagnosisOnBlur"
             ></textarea>
           </div>
           <div class="space-y-3 md:col-span-2">
@@ -746,7 +938,7 @@ watch([leaveStart, leaveEnd], () => {
               <input v-model="isLeaveAllowed" type="checkbox" class="rounded border-clinic-border text-clinic-blue focus:ring-clinic-blue" />
               <span>อนุญาตการลาพัก</span>
             </div>
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-3 gap-3">
               <div>
                 <label class="block text-[11px] font-medium mb-1">วันที่เริ่มลาพัก</label>
                 <input v-model="leaveStart" type="date" class="w-full rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs" />
@@ -755,10 +947,10 @@ watch([leaveStart, leaveEnd], () => {
                 <label class="block text-[11px] font-medium mb-1">วันที่สิ้นสุดลาพัก</label>
                 <input v-model="leaveEnd" type="date" class="w-full rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs" />
               </div>
-            </div>
-            <div>
+              <div>
               <label class="block text-[11px] font-medium mb-1">จำนวนวันลาพัก</label>
               <input v-model="totalLeaveDays" type="number" min="0" readonly class="w-full rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs" />
+            </div>
             </div>
             <div class="flex items-center gap-4 text-xs">
               <label class="inline-flex items-center gap-2">
@@ -769,6 +961,14 @@ watch([leaveStart, leaveEnd], () => {
                 <input v-model="isHaveConditions" type="checkbox" class="rounded border-clinic-border text-clinic-blue focus:ring-clinic-blue" />
                 <span>โรคประจำตัว</span>
               </label>
+            </div>
+            <div v-if="isDrugAllergy">
+              <label class="block text-[11px] font-medium mb-1">รายละเอียดแพ้ยา</label>
+              <textarea v-model="drugAllergyText" rows="2" class="w-full rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs"></textarea>
+            </div>
+            <div v-if="isHaveConditions">
+              <label class="block text-[11px] font-medium mb-1">รายละเอียดโรคประจำตัว</label>
+              <textarea v-model="congenitalDiseaseText" rows="2" class="w-full rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs"></textarea>
             </div>
           </div>
         </div>
@@ -974,6 +1174,10 @@ watch([leaveStart, leaveEnd], () => {
         <p v-if="message" class="text-xs" :class="message.includes('success') ? 'text-emerald-600' : 'text-red-500'">
           {{ message }}
         </p>
+
+        <div class="ml-auto mr-4 text-xs font-medium text-slate-600 dark:text-slate-300" v-if="roundCount > 0">
+          มาครั้งที่ {{ roundCount }} ของเดือนนี้
+        </div>
 
         <button
           type="button"

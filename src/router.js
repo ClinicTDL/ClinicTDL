@@ -11,6 +11,8 @@ import SystemUsersPage from './views/SystemUsersPage.vue'
 import EmployeeList from './views/EmployeeList.vue'
 import AdminDashboardPage from './views/AdminDashboardPage.vue'
 import AdminLayout from './views/admin/AdminLayout.vue'
+import ApproveHistory from './views/ApproveHistory.vue'
+import MedicineAdminPage from './views/admin/MedicineAdminPage.vue'
 
 const routes = [
   {
@@ -31,6 +33,7 @@ const routes = [
       { path: 'import-history', name: 'import-history', component: ImportHistoryPage },
       { path: 'system-users', name: 'system-users', component: SystemUsersPage },
       { path: 'employee-list', name: 'employee-list', component: EmployeeList },
+      { path: 'approve-history', name: 'approve-history', component: ApproveHistory },
     ],
   },
   {
@@ -39,12 +42,13 @@ const routes = [
     children: [
       { path: '', redirect: { name: 'admin-dashboard' } },
       { path: 'dashboard', name: 'admin-dashboard', component: AdminDashboardPage },
-      { path: 'medicine-list', name: 'admin-medicine-list', component: MedicineListPage },
+      { path: 'medicine-list', name: 'admin-medicine-list', component: MedicineAdminPage },
       { path: 'treatment-history', name: 'admin-treatment-history', component: TreatmentHistoryPage },
       { path: 'dispensing-history', name: 'admin-dispensing-history', component: DispensingHistoryPage },
       { path: 'import-history', name: 'admin-import-history', component: ImportHistoryPage },
       { path: 'system-users', name: 'admin-system-users', component: SystemUsersPage },
       { path: 'employee-list', name: 'admin-employee-list', component: EmployeeList },
+      { path: 'approve-history', name: 'admin-approve-history', component: ApproveHistory },
     ],
   },
 ]
@@ -55,15 +59,16 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
-  const rawSession = localStorage.getItem('clinic_tdl_session')
-  const session = rawSession ? JSON.parse(rawSession) : null
-  const now = Date.now()
-
-  if (session && session.expiresAt && now > session.expiresAt) {
-    localStorage.removeItem('clinic_tdl_session')
+  const getCookie = (name) => {
+    const v = document.cookie.split('; ').find((row) => row.startsWith(name + '='))
+    return v ? v.split('=')[1] : ''
   }
-
-  const isAuthenticated = !!localStorage.getItem('clinic_tdl_session')
+  const raw = getCookie('clinic_tdl_session')
+  let session = null
+  try {
+    session = raw ? JSON.parse(decodeURIComponent(raw)) : null
+  } catch {}
+  const isAuthenticated = !!session
 
   if (to.name !== 'login' && !isAuthenticated) {
     next({ name: 'login' })
@@ -75,10 +80,26 @@ router.beforeEach((to, from, next) => {
     } else {
       next()
     }
-  } else if (to.name === 'home' && isAuthenticated && session?.status === 'admin') {
-    next({ name: 'admin-dashboard' })
+  } else if (isAuthenticated && session?.status === 'admin') {
+    const map = {
+      home: 'admin-dashboard',
+      dashboard: 'admin-dashboard',
+      'medicine-list': 'admin-medicine-list',
+      'treatment-history': 'admin-treatment-history',
+      'dispensing-history': 'admin-dispensing-history',
+      'import-history': 'admin-import-history',
+      'system-users': 'admin-system-users',
+      'employee-list': 'admin-employee-list',
+      'approve-history': 'admin-approve-history',
+    }
+    const target = to?.name && map[to.name]
+    if (target) {
+      next({ name: target })
+    } else {
+      next({ name: 'admin-dashboard' })
+    }
   } else if (to.name === 'login' && isAuthenticated) {
-    if (session.status === 'admin') {
+    if (session?.status === 'admin') {
       next({ name: 'admin-dashboard' })
     } else {
       next({ name: 'home' })

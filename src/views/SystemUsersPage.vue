@@ -21,8 +21,17 @@ const saving = ref(false)
 const confirmAdd = ref(false)
 const saveError = ref('')
 
-const rawSession = localStorage.getItem('clinic_tdl_session')
-const session = rawSession ? JSON.parse(rawSession) : null
+const getCookie = (name) => {
+  const v = document.cookie.split('; ').find((row) => row.startsWith(name + '='))
+  return v ? v.split('=')[1] : ''
+}
+let session = null
+try {
+  const raw = getCookie('clinic_tdl_session') || localStorage.getItem('clinic_tdl_session')
+  session = raw ? JSON.parse(decodeURIComponent(raw)) : null
+} catch {
+  session = null
+}
 const isAdmin = computed(() => session?.status === 'admin')
 
 const loadUsers = async () => {
@@ -133,9 +142,10 @@ const requestSave = () => {
 const confirmSave = async () => {
   saving.value = true
   try {
-    const rawSession = localStorage.getItem('clinic_tdl_session')
-    const session = rawSession ? JSON.parse(rawSession) : null
-    const creatorId = session?.userId || null
+    const raw = (document.cookie.split('; ').find(r => r.startsWith('clinic_tdl_session=')) || '').split('=')[1] || localStorage.getItem('clinic_tdl_session') || ''
+    let sess = null
+    try { sess = raw ? JSON.parse(decodeURIComponent(raw)) : null } catch { sess = null }
+    const creatorId = sess?.userId || null
     const password_hash = await bcrypt.hash(newPassword.value, 10)
     const payload = {
       username: newUsername.value,

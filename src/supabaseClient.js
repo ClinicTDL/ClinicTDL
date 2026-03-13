@@ -28,3 +28,4 @@ export const supabaseStorage = HAS_STORAGE_ENV
   : null
 export const supabase = supabaseDb
 export const STORAGE_BUCKET = sanitize(import.meta.env.VITE_SUPABASE_BUCKET) || 'patient-photos'
+export const DOCUMENT_BUCKET = sanitize(import.meta.env.VITE_SUPABASE_DOCUMENT_BUCKET) || 'document_images'

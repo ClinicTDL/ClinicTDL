@@ -119,7 +119,7 @@ const exportExcel = async () => {
     const sheet2 = [['วันที่', 'รหัสพนักงาน', 'ชื่อ-นามสกุล', 'แผนก', 'ชื่อยา', 'จำนวน', 'คนจ่ายยา']]
     for (const r of rows) {
       sheet2.push([
-        new Date(r.created_at).toLocaleDateString('th-TH'),
+        new Date(r.created_at).toLocaleDateString('en-UK'),
         r.employee_code,
         r.fullname,
         r.department,

@@ -13,8 +13,17 @@ const department = ref('')
 const departments = ref([])
 const mode = ref('recent')
 
-const sessionRaw = localStorage.getItem('clinic_tdl_session')
-const session = sessionRaw ? JSON.parse(sessionRaw) : null
+const getCookie = (name) => {
+  const v = document.cookie.split('; ').find((row) => row.startsWith(name + '='))
+  return v ? v.split('=')[1] : ''
+}
+let session = null
+try {
+  const raw = getCookie('clinic_tdl_session') || localStorage.getItem('clinic_tdl_session')
+  session = raw ? JSON.parse(decodeURIComponent(raw)) : null
+} catch {
+  session = null
+}
 const isAdmin = computed(() => session?.status === 'admin')
 
 const showSidebar = ref(false)

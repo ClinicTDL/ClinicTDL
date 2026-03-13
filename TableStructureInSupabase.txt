@@ -30,14 +30,17 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
 
 3. medicine_list
     id uuid,
+    sku text,
     name text,
     unit text,
     current_stock int4 default 0,
+    group text,
+    indication text,
+    side_effect text,
     created_by uuid (REF with system_users.id),
     updated_by uuid (REF with system_users.id),
     created_at timestamp,
-    updated_at timestamp,
-    sku text
+    updated_at timestamp
 
 4. stock_transactions
     id uuid,
@@ -70,6 +73,7 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
     updated_by uuid (REF with system_users.id),
     created_at timestamp,
     updated_at timestamp,
+    round text
 
 6. depensing_records
     id uuid,
@@ -77,3 +81,34 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
     medicine_id uuid (REF with medicine_list.id),
     amount int4,
     created_at timestamp
+
+7. medicine_import_logs
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    medicine_id uuid REFERENCES medicine_list(id) ON DELETE CASCADE,
+    quantity INT NOT NULL DEFAULT 0,
+    category TEXT CHECK (category IN ('ยาทั่วไป', 'เครื่องมือแพทย์')),
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    document_url TEXT,
+    note TEXT,
+    note_transaction TEXT, // สำหรับสถานะเช่น: ยาเข้าใหม่(นำเข้าครั้งแรก), เติมสินค้า //
+    created_by uuid REFERENCES system_users(id),
+    approved_by uuid REFERENCES system_users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+
+
+
+*/ Spacial command for (medicine_import_logs) table:
+
+    CREATE OR REPLACE FUNCTION update_timestamp()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        NEW.updated_at = NOW();
+        RETURN NEW;
+    END;
+    $$ language 'plpgsql';
+
+    CREATE TRIGGER tr_update_medicine_import_logs
+        BEFORE UPDATE ON medicine_import_logs
+        FOR EACH ROW
+        EXECUTE PROCEDURE update_timestamp();

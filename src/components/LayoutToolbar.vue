@@ -72,7 +72,9 @@ const showNotifications = ref(false)
 const showProfile = ref(false)
 
 const handleLogout = () => {
+  document.cookie = 'clinic_tdl_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; samesite=Lax'
   localStorage.removeItem('clinic_tdl_session')
+  user.value = null
   router.push({ name: 'login' })
 }
 
@@ -295,8 +297,16 @@ onMounted(() => {
     now.value = new Date()
   }, 1000)
 
-  const rawSession = localStorage.getItem('clinic_tdl_session')
-  user.value = rawSession ? JSON.parse(rawSession) : null
+  const getCookie = (name) => {
+    const v = document.cookie.split('; ').find((row) => row.startsWith(name + '='))
+    return v ? v.split('=')[1] : ''
+  }
+  const rawSession = getCookie('clinic_tdl_session')
+  try {
+    user.value = rawSession ? JSON.parse(decodeURIComponent(rawSession)) : null
+  } catch {
+    user.value = null
+  }
   
   if (user.value) {
     loadProfileImage()
