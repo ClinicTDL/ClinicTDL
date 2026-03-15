@@ -388,6 +388,7 @@ const getUnitCap = (unitRaw) => {
   if (unit === 'แผง') return 3
   if (unit === 'เม็ด') return 10
   if (unit === 'ซอง') return 3
+  if (unit === 'ขวด') return 1
   if (unit === 'หลอด') return 3
   if (unit === 'ถุง') return 1
   return 3

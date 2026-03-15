@@ -95,7 +95,7 @@ onMounted(loadData)
         >
           <i class="fa-solid fa-arrow-left"></i>
         </button>
-        <h1 class="text-xl font-semibold text-slate-900 dark:text-white">ประวัติการเติมสินค้า</h1>
+        <h1 class="text-xl font-semibold text-slate-900 dark:text-white">ประวัติการส่งคำขออนุมัติ</h1>
       </div>
     </div>
 

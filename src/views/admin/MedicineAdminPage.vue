@@ -335,11 +335,11 @@ onMounted(loadMedicines)
         <div class="flex-1 space-y-4 overflow-y-auto">
           <div>
             <label class="block text-xs font-medium mb-1">SKU</label>
-            <input v-model="formData.sku" type="text" :readonly="sidebarMode === 'restock'" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" />
+            <input v-model="formData.sku" placeholder="เช่น CN-9..." type="text" :readonly="sidebarMode === 'restock'" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" />
           </div>
           <div>
             <label class="block text-xs font-medium mb-1">ชื่อยา</label>
-            <input v-model="formData.name" type="text" :readonly="sidebarMode === 'restock'" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" />
+            <input v-model="formData.name" placeholder="เช่น Paracetamol..." type="text" :readonly="sidebarMode === 'restock'" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" />
           </div>
           <div v-if="sidebarMode === 'add'">
             <label class="block text-xs font-medium mb-1">หน่วย</label>
@@ -350,10 +350,13 @@ onMounted(loadMedicines)
               <option value="">-- เลือกหน่วย --</option>
               <option value="แผง">แผง</option>
               <option value="เม็ด">เม็ด</option>
+              <option value="ซอง">ซอง</option>
               <option value="หลอด">หลอด</option>
               <option value="ถุง">ถุง</option>
               <option value="ขวด">ขวด</option>
               <option value="คู่">คู่</option>
+              <option value="ดวง">ดวง</option>
+              <option value="อัน">อัน</option>
             </select>
           </div>
           <div>

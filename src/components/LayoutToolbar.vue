@@ -328,6 +328,15 @@ onUnmounted(() => {
     </div>
 
     <div class="flex items-center gap-3">
+      <a
+        href="https://drive.google.com/file/d/1iOVBCKFxrdJbaXkMicuXNapsOJGvNyub/view?usp=sharing"
+        target="_blank"
+        rel="noopener"
+        class="w-9 h-9 inline-flex items-center justify-center rounded-full border border-clinic-border dark:border-slate-700 hover:bg-clinic-light dark:hover:bg-slate-800"
+        title="คู่มือการใช้งาน"
+      >
+        <i class="fa-solid fa-book"></i>
+      </a>
       <button
         type="button"
         class="w-9 h-9 inline-flex items-center justify-center rounded-full border border-clinic-border dark:border-slate-700 hover:bg-clinic-light dark:hover:bg-slate-800"

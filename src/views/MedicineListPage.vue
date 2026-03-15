@@ -22,6 +22,8 @@ const medicines = ref([])
 const search = ref('')
 const unitFilter = ref('')
 const units = ref([])
+const groupFilter = ref('')
+const groups = ref([])
 
 // Approval System State
 const showPendingModal = ref(false)
@@ -106,6 +108,8 @@ const loadMedicines = async () => {
 
     const unitSet = new Set((allData || []).map((m) => (m.unit || '').toString().trim()).filter((v) => !!v))
     units.value = Array.from(unitSet).sort()
+    const groupSet = new Set((allData || []).map((m) => (m.group || '').toString().trim()).filter((v) => !!v))
+    groups.value = Array.from(groupSet).sort()
     
     const lows = (allData || []).filter((m) =>
       (m?.group || '').toString().trim() !== 'เครื่องมือแพทย์' &&
@@ -146,6 +150,9 @@ const loadMedicines = async () => {
     }
     if (unitFilter.value) {
       query = query.eq('unit', unitFilter.value)
+    }
+    if (groupFilter.value) {
+      query = query.eq('group', groupFilter.value)
     }
 
     const { data, error } = await query
@@ -387,7 +394,7 @@ const processRejection = async () => {
   }
 }
 
-watch([search, unitFilter], () => {
+watch([search, unitFilter, groupFilter], () => {
   loadMedicines()
 })
 
@@ -427,10 +434,19 @@ onMounted(loadMedicines)
         <option value="">ประเภททั้งหมด</option>
         <option v-for="u in units" :key="u" :value="u">{{ u }}</option>
       </select>
+      <select v-model="groupFilter" class="rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs">
+        <option value="">กลุ่มทั้งหมด</option>
+        <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
+      </select>
     </div>
 
     <!-- Table -->
     <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-3 overflow-x-auto">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-xs text-slate-600 dark:text-slate-300">
+          ทั้งหมด {{ medicines.length }} รายการ
+        </div>
+      </div>
       <table class="min-w-full text-xs">
         <thead>
           <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
