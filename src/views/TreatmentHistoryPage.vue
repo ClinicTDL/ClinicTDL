@@ -12,6 +12,9 @@ const diagnosis = ref('')
 const examinerId = ref('')
 const departments = ref([])
 const examiners = ref([])
+const frequentOnly = ref(false)
+const frequentMinCount = ref(2)
+const searchAll = ref('')
 
 const loadFilters = async () => {
   const { data: deptRows } = await supabase
@@ -79,25 +82,44 @@ const loadHistory = async () => {
     if (examinerId.value) {
       query = query.eq('created_by', examinerId.value)
     }
-    if (department.value) {
-      const { data: deptEmps } = await supabase
-        .from('employees')
-        .select('id')
-        .eq('department', department.value)
-        .limit(5000)
-      const ids = (deptEmps || []).map((e) => e.id)
-      if (ids.length) {
-        query = query.in('employee_id', ids)
-      } else {
+    if (department.value || searchAll.value) {
+      const term = (searchAll.value || '').toString().trim()
+      let empQuery = supabase.from('employees').select('id').limit(5000)
+      if (department.value) empQuery = empQuery.eq('department', department.value)
+      if (term) empQuery = empQuery.or(`employee_code.ilike.%${term}%,fullname.ilike.%${term}%`)
+      const { data: empRows } = await empQuery
+      const ids = (empRows || []).map((e) => e.id)
+      if (department.value && !ids.length) {
         records.value = []
         totalCount.value = 0
         return
+      }
+      if (department.value && ids.length) {
+        query = query.in('employee_id', ids)
+      }
+      if (term) {
+        const orParts = [`symptoms.ilike.%${term}%`]
+        if (ids.length) orParts.push(`employee_id.in.(${ids.join(',')})`)
+        query = query.or(orParts.join(','))
       }
     }
 
     const { data, error } = await query
     if (error) throw error
-    const rows = data || []
+    let rows = data || []
+    if (frequentOnly.value) {
+      const counts = new Map()
+      for (const r of rows) {
+        const dt = new Date(r.created_at)
+        const key = `${r.employee_id}-${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+        counts.set(key, (counts.get(key) || 0) + 1)
+      }
+      rows = rows.filter((r) => {
+        const dt = new Date(r.created_at)
+        const key = `${r.employee_id}-${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+        return (counts.get(key) || 0) >= Number(frequentMinCount.value || 2)
+      })
+    }
     records.value = rows.map((r) => {
       const amount =
         (r?.dispensing_records || []).reduce(
@@ -155,60 +177,52 @@ const viewImage = (u) => {
       </h1>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2">
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-slate-600 dark:text-slate-300">วันที่เริ่ม</label>
-        <input
-          v-model="dateStart"
-          type="date"
-          class="flex-1 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
-        />
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div class="flex flex-col xl:col-span-2">
+        <label class="text-xs text-slate-600 dark:text-slate-300 mb-1">ค้นหา (ชื่อ/รหัส/อาการ)</label>
+        <input v-model="searchAll" type="text" placeholder="เช่น อธีน่า หรือ L2509027 หรือ ปวดหัว ..." class="flex-1 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" />
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-slate-600 dark:text-slate-300">วันที่สิ้นสุด</label>
-        <input
-          v-model="dateEnd"
-          type="date"
-          class="flex-1 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
-        />
+      <div class="flex flex-col xl:col-span-2">
+        <label class="text-xs text-slate-600 dark:text-slate-300 mb-1">วินิจฉัย</label>
+        <input v-model="diagnosis" type="text" placeholder="เช่น Headache, Common Cold ..." class="flex-1 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" />
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-slate-600 dark:text-slate-300">แผนก</label>
-        <select
-          v-model="department"
-          class="flex-1 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
-        >
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mt-2">
+      <div class="flex flex-col">
+        <label class="text-xs text-slate-600 dark:text-slate-300 mb-1">ช่วงวันที่</label>
+        <div class="grid grid-cols-2 gap-2">
+          <input v-model="dateStart" type="date" class="rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" />
+          <input v-model="dateEnd" type="date" class="rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" />
+        </div>
+      </div>
+      <div class="flex flex-col">
+        <label class="text-xs text-slate-600 dark:text-slate-300 mb-1">แผนก</label>
+        <select v-model="department" class="rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue">
           <option value="">ทั้งหมด</option>
           <option v-for="d in departments" :key="d" :value="d">{{ d }}</option>
         </select>
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-slate-600 dark:text-slate-300">วินิจฉัย</label>
-        <input
-          v-model="diagnosis"
-          type="text"
-          placeholder="เช่น ไข้ หวัดฯ"
-          class="flex-1 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
-        />
+      <div class="grid grid-cols-2 gap-2">
+        <div class="flex flex-col">
+          <label class="text-xs text-slate-600 dark:text-slate-300 mb-1">ผู้ตรวจ</label>
+          <select v-model="examinerId" class="rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue">
+            <option value="">ทั้งหมด</option>
+            <option v-for="u in examiners" :key="u.id" :value="u.id">{{ u.name }}</option>
+          </select>
+        </div>
+        <div class="flex flex-col">
+          <label class="text-xs text-slate-600 dark:text-slate-300 mb-1">มาบ่อย</label>
+          <div class="flex items-center gap-2">
+            <input v-model.number="frequentMinCount" type="number" min="2" class="w-20 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" />
+            <label class="inline-flex items-center gap-2">
+              <input v-model="frequentOnly" type="checkbox" class="rounded border-clinic-border text-clinic-blue focus:ring-clinic-blue" />
+              <span class="text-xs">ใช้งาน</span>
+            </label>
+          </div>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-slate-600 dark:text-slate-300">ผู้ตรวจ</label>
-        <select
-          v-model="examinerId"
-          class="flex-1 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
-        >
-          <option value="">ทั้งหมด</option>
-          <option v-for="u in examiners" :key="u.id" :value="u.id">
-            {{ u.name }}
-          </option>
-        </select>
-      </div>
-      <div class="md:col-span-2 xl:col-span-5 flex justify-end">
-        <button
-          type="button"
-          class="inline-flex items-center justify-center gap-1 rounded-lg bg-clinic-blue text-white px-3 py-2 text-xs hover:bg-blue-700"
-          @click="loadHistory"
-        >
+      <div class="md:col-span-2 xl:col-span-3 flex justify-end">
+        <button type="button" class="inline-flex items-center justify-center gap-1 rounded-lg bg-clinic-blue text-white px-3 py-2 text-xs hover:bg-blue-700" @click="loadHistory">
           <i class="fa-solid fa-magnifying-glass"></i>
           <span>กรองข้อมูล</span>
         </button>

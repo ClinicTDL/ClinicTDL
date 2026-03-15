@@ -143,7 +143,7 @@ const openRestockSidebar = (medicine) => {
     sku: medicine.sku || '',
     unit: medicine.unit,
     quantity: 1,
-    category: 'ยาทั่วไป',
+    category: medicine.group || 'ยาทั่วไป',
     note: ''
   }
   showSidebar.value = true
@@ -358,7 +358,7 @@ onMounted(loadMedicines)
           </div>
           <div>
             <label class="block text-xs font-medium mb-1">หมวดหมู่</label>
-            <select v-model="formData.category" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800">
+            <select v-model="formData.category" :disabled="sidebarMode === 'restock'" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed">
               <option value="ยาทั่วไป">ยาทั่วไป</option>
               <option value="เครื่องมือแพทย์">เครื่องมือแพทย์</option>
             </select>
