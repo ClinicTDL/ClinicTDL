@@ -58,7 +58,8 @@ const loading = ref(true)
 const summary = ref({
   patientsThisMonth: { value: 0, change: 0 },
   totalStock: { value: 0, change: 0 },
-  importedThisMonth: { value: 0, change: 0 },
+  topDepartment: { name: '-', value: 0, change: 0, percentOfTotal: 0 },
+  topDiagnosis: { name: '-', value: 0, change: 0, percentOfTotal: 0 },
   dispensedThisMonth: { value: 0, change: 0 },
 })
 
@@ -79,9 +80,13 @@ const dayKeyLocal = (d) => {
 }
 
 const lastPatients = ref([])
-const mostSymptoms = ref([])
-const medicineStats = ref([]) // { name, diagnosis, dispensedCount }
-const departmentStats = ref([]) // { department, patientCount, medicineCount }
+const topDiagnoses = ref([]) // will hold { diagnosis, count, change }
+const medicineStats = ref([]) // { name, diagnosis, dispensedCount, change }
+const departmentStats = ref([]) // { department, patientCount, medicineCount, change }
+const leaveStats = ref([]) // { department, leaveCount, change }
+
+const deptPageIndex = ref(0)
+const leavePageIndex = ref(0)
 
 // Date Filter State
 const dateRange = ref('this-month') // this-month, last-month, this-week, last-week, custom
@@ -295,51 +300,79 @@ const loadDashboardData = async () => {
       patientsPrevRes,
       totalStockRes,
       importedRangeRes,
-      importedPrevRes,
       dispensedRangeRes,
       dispensedPrevRes,
       lastPatientsRes,
       kpiPatientsRes,
       usage15DaysRes,
       allCheckupsRangeRes,
-      allDispensingRangeRes
+      allCheckupsPrevRes,
+      allDispensingRangeRes,
+      allDispensingPrevRes
     ] = await Promise.all([
-      supabase.from('checkups').select('id, created_at, diagnosis').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
-      supabase.from('checkups').select('id, created_at').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
+      supabase.from('checkups').select('id, created_at, diagnosis, symptoms, is_leave_allowed, employees(department)').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
+      supabase.from('checkups').select('id, created_at, diagnosis, symptoms, is_leave_allowed, employees(department)').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
       supabase.from('medicine_list').select('id, current_stock'),
       supabase.from('stock_transactions').select('id, quantity, created_at').eq('transaction_type', 'RECEIVE').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
-      supabase.from('stock_transactions').select('id, quantity, created_at').eq('transaction_type', 'RECEIVE').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
       supabase.from('dispensing_records').select('id, amount, created_at').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
       supabase.from('dispensing_records').select('id, amount, created_at').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
       supabase.from('checkups').select('id, created_at, diagnosis, employees(employee_code, fullname, department), dispensing_records(amount)').order('created_at', { ascending: false }).limit(5),
       supabase.from('checkups').select('id, created_at').gte('created_at', kpiStart.toISOString()).lte('created_at', kpiEnd.toISOString()),
       supabase.from('dispensing_records').select('id, created_at, amount').gte('created_at', kpiStart.toISOString()).lte('created_at', kpiEnd.toISOString()),
       supabase.from('checkups').select('id, employees(department)').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
-      supabase.from('dispensing_records').select('id, amount, medicine:medicine_list(name), checkup:checkups(diagnosis, employees(department))').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString())
+      supabase.from('checkups').select('id, employees(department)').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
+      supabase.from('dispensing_records').select('id, amount, medicine:medicine_list(name), checkup:checkups(diagnosis, symptoms, employees(department))').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
+      supabase.from('dispensing_records').select('id, amount, medicine:medicine_list(name), checkup:checkups(diagnosis, symptoms, employees(department))').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString())
     ])
 
     // Process Summary
     const patientsRange = patientsRangeRes.data || []
     const patientsPrev = patientsPrevRes.data || []
     const totalStockRows = totalStockRes.data || []
-    const importedRange = importedRangeRes.data || []
-    const importedPrev = importedPrevRes.data || []
-    const dispensedRange = dispensedRangeRes.data || []
-    const dispensedPrev = dispensedPrevRes.data || []
+    const dispensedRangeValue = (dispensedRangeRes.data || []).reduce((sum, r) => sum + (r.amount || 0), 0)
+    const dispensedPrevValue = (dispensedPrevRes.data || []).reduce((sum, r) => sum + (r.amount || 0), 0)
 
-    const totalStockValue = totalStockRows.reduce((sum, r) => sum + (r.current_stock || 0), 0)
-    const importedRangeValue = importedRange.reduce((sum, r) => sum + (r.quantity || 0), 0)
-    const importedPrevValue = importedPrev.reduce((sum, r) => sum + (r.quantity || 0), 0)
-    const dispensedRangeValue = dispensedRange.reduce((sum, r) => sum + (r.amount || 0), 0)
-    const dispensedPrevValue = dispensedPrev.reduce((sum, r) => sum + (r.amount || 0), 0)
+    // 1. Top Department Stats
+    const getDeptStats = (rows) => {
+      const map = {}
+      rows.forEach(r => {
+        const d = r?.employees?.department || 'ไม่ระบุ'
+        map[d] = (map[d] || 0) + 1
+      })
+      return map
+    }
+    const deptMapRange = getDeptStats(patientsRange)
+    const deptMapPrev = getDeptStats(patientsPrev)
+    const sortedDepts = Object.entries(deptMapRange).sort((a,b) => b[1] - a[1])
+    const topDeptName = sortedDepts[0]?.[0] || '-'
+    const topDeptVal = sortedDepts[0]?.[1] || 0
+    const topDeptPrevVal = deptMapPrev[topDeptName] || 0
+    const topDeptPercent = patientsRange.length ? (topDeptVal / patientsRange.length) * 100 : 0
+
+    // 2. Top Diagnosis Stats
+    const getDiagStats = (rows) => {
+      const map = {}
+      rows.forEach(r => {
+        const d = (r?.diagnosis || '').trim() || '-'
+        if (d !== '-') map[d] = (map[d] || 0) + 1
+      })
+      return map
+    }
+    const diagMapRange = getDiagStats(patientsRange)
+    const diagMapPrev = getDiagStats(patientsPrev)
+    const sortedDiags = Object.entries(diagMapRange).sort((a,b) => b[1] - a[1])
+    const topDiagName = sortedDiags[0]?.[0] || '-'
+    const topDiagVal = sortedDiags[0]?.[1] || 0
+    const topDiagPrevVal = diagMapPrev[topDiagName] || 0
+    const topDiagPercent = patientsRange.length ? (topDiagVal / patientsRange.length) * 100 : 0
 
     summary.value = {
       patientsThisMonth: { value: patientsRange.length, change: computeChangePercent(patientsRange.length, patientsPrev.length) },
-      totalStock: { value: totalStockValue, change: 0 },
-      importedThisMonth: { value: importedRangeValue, change: computeChangePercent(importedRangeValue, importedPrevValue) },
+      totalStock: { value: totalStockRows.reduce((sum, r) => sum + (r.current_stock || 0), 0), change: 0 },
+      topDepartment: { name: topDeptName, value: topDeptVal, change: computeChangePercent(topDeptVal, topDeptPrevVal), percentOfTotal: topDeptPercent },
+      topDiagnosis: { name: topDiagName, value: topDiagVal, change: computeChangePercent(topDiagVal, topDiagPrevVal), percentOfTotal: topDiagPercent },
       dispensedThisMonth: { value: dispensedRangeValue, change: computeChangePercent(dispensedRangeValue, dispensedPrevValue) },
     }
-    prevImported.value = importedPrevValue
     prevDispensed.value = dispensedPrevValue
 
     // Process Last Patients
@@ -351,6 +384,7 @@ const loadDashboardData = async () => {
       amount: (r?.dispensing_records || []).reduce((sum, d) => sum + (d.amount || 0), 0),
     }))
 
+    // KPI Chart Logic
     const patientByDay = {}
     const usageByDay = {}
     ;(kpiPatientsRes.data || []).forEach(row => {
@@ -366,10 +400,8 @@ const loadDashboardData = async () => {
     if (!useMonthly) {
       const days = []
       const displayLabels = []
-      const dIter = new Date(kpiStart)
-      dIter.setHours(0,0,0,0)
-      const endIter = new Date(kpiEnd)
-      endIter.setHours(0,0,0,0)
+      const dIter = new Date(kpiStart); dIter.setHours(0,0,0,0)
+      const endIter = new Date(kpiEnd); endIter.setHours(0,0,0,0)
       for (let d = dIter; d <= endIter; d = new Date(d.getTime() + 86400000)) {
         const key = dayKeyLocal(d)
         days.push(key)
@@ -381,22 +413,12 @@ const loadDashboardData = async () => {
     } else {
       const monthKey = (key) => {
         const parts = String(key).split('-')
-        const y = Number(parts[0])
-        const m = Number(parts[1])
-        return `${y}-${String(m).padStart(2,'0')}`
+        return `${parts[0]}-${String(parts[1]).padStart(2,'0')}`
       }
-      const patientByMonth = {}
-      const usageByMonth = {}
-      Object.entries(patientByDay).forEach(([d, cnt]) => {
-        const mk = monthKey(d)
-        patientByMonth[mk] = (patientByMonth[mk] || 0) + cnt
-      })
-      Object.entries(usageByDay).forEach(([d, amt]) => {
-        const mk = monthKey(d)
-        usageByMonth[mk] = (usageByMonth[mk] || 0) + amt
-      })
-      const labels = []
-      const monthsKeys = []
+      const patientByMonth = {}; const usageByMonth = {}
+      Object.entries(patientByDay).forEach(([d, cnt]) => { const mk = monthKey(d); patientByMonth[mk] = (patientByMonth[mk] || 0) + cnt })
+      Object.entries(usageByDay).forEach(([d, amt]) => { const mk = monthKey(d); usageByMonth[mk] = (usageByMonth[mk] || 0) + amt })
+      const labels = []; const monthsKeys = []
       const mStart = new Date(kpiStart.getFullYear(), kpiStart.getMonth(), 1)
       const mEnd = new Date(kpiEnd.getFullYear(), kpiEnd.getMonth(), 1)
       for (let m = new Date(mStart); m <= mEnd; m.setMonth(m.getMonth()+1)) {
@@ -409,64 +431,98 @@ const loadDashboardData = async () => {
       kpiUsage.value = monthsKeys.map(k => usageByMonth[k] || 0)
     }
 
-    // Process Symptoms from Range
-    const checkupsRange = patientsRangeRes.data || []
-    mostSymptoms.value = topCounts(checkupsRange, 'diagnosis', 7).map(r => ({ symptoms: r.key, count: r.count }))
+    // Top Diagnosis List with KPI
+    const getDiagnosisListStats = (rows) => {
+      const map = {}
+      rows.forEach(r => {
+        const d = (r?.diagnosis || '').trim() || '-'
+        if (d !== '-') map[d] = (map[d] || 0) + 1
+      })
+      return map
+    }
+    const diagListMapRange = getDiagnosisListStats(patientsRange)
+    const diagListMapPrev = getDiagnosisListStats(patientsPrev)
+    topDiagnoses.value = Object.entries(diagListMapRange)
+      .map(([d, count]) => ({
+        diagnosis: d,
+        count,
+        change: computeChangePercent(count, diagListMapPrev[d] || 0)
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
 
-    // Process Medicine and Department Stats
-    const medMap = {}
-    const depMap = {}
-
-    // Process Department Patient Count
-    ;(allCheckupsRangeRes.data || []).forEach(r => {
-      const dep = r?.employees?.department || 'Unknown'
-      if (!depMap[dep]) depMap[dep] = { department: dep, patientCount: 0, medicineCount: 0 }
-      depMap[dep].patientCount++
-    })
-
-    ;(allDispensingRangeRes.data || []).forEach(r => {
-      // For Medicine Stats
-      const medName = r?.medicine?.name || 'Unknown'
-      const diagnosis = r?.checkup?.diagnosis || '-'
-      if (!medMap[medName]) {
-        medMap[medName] = { 
-          name: medName, 
-          dispensedCount: 0,
-          diagnoses: {} 
-        }
-      }
-      medMap[medName].dispensedCount += (r.amount || 0)
-      if (diagnosis !== '-') {
-        medMap[medName].diagnoses[diagnosis] = (medMap[medName].diagnoses[diagnosis] || 0) + 1
-      }
-
-      // For Department Medicine Count
-      const dep = r?.checkup?.employees?.department || 'Unknown'
-      if (!depMap[dep]) depMap[dep] = { department: dep, patientCount: 0, medicineCount: 0 }
-      depMap[dep].medicineCount += (r.amount || 0)
-    })
-    
-    // Finalize Medicine Stats
-    medicineStats.value = Object.values(medMap)
-      .map(m => {
-        let topDiag = '-'
-        let maxCount = 0
-        for (const [diag, count] of Object.entries(m.diagnoses)) {
-          if (count > maxCount) {
-            maxCount = count
-            topDiag = diag
-          }
-        }
+    // Medicine Stats with KPI
+    const getMedStats = (rows) => {
+      const map = {}
+      rows.forEach(r => {
+        const name = r?.medicine?.name || 'Unknown'
+        const diag = r?.checkup?.diagnosis || '-'
+        if (!map[name]) map[name] = { dispensedCount: 0, diags: {} }
+        map[name].dispensedCount += (r.amount || 0)
+        if (diag !== '-') map[name].diags[diag] = (map[name].diags[diag] || 0) + 1
+      })
+      return map
+    }
+    const medMapRange = getMedStats(allDispensingRangeRes.data || [])
+    const medMapPrev = getMedStats(allDispensingPrevRes.data || [])
+    medicineStats.value = Object.entries(medMapRange)
+      .map(([name, m]) => {
+        const topDiag = Object.entries(m.diags).sort((a,b) => b[1]-a[1])[0]?.[0] || '-'
         return {
-          name: m.name,
+          name,
           dispensedCount: m.dispensedCount,
-          diagnosis: topDiag
+          diagnosis: topDiag,
+          change: computeChangePercent(m.dispensedCount, medMapPrev[name]?.dispensedCount || 0)
         }
       })
       .sort((a, b) => b.dispensedCount - a.dispensedCount)
 
-    // Finalize Department Stats
-    departmentStats.value = Object.values(depMap).sort((a, b) => b.patientCount - a.patientCount)
+    // Department Stats with KPI
+    const getFullDeptStats = (checkups, dispensing) => {
+      const map = {}
+      checkups.forEach(r => {
+        const d = r?.employees?.department || 'Unknown'
+        if (!map[d]) map[d] = { patientCount: 0, medicineCount: 0 }
+        map[d].patientCount++
+      })
+      dispensing.forEach(r => {
+        const d = r?.checkup?.employees?.department || 'Unknown'
+        if (!map[d]) map[d] = { patientCount: 0, medicineCount: 0 }
+        map[d].medicineCount += (r.amount || 0)
+      })
+      return map
+    }
+    const fullDeptMapRange = getFullDeptStats(allCheckupsRangeRes.data || [], allDispensingRangeRes.data || [])
+    const fullDeptMapPrev = getFullDeptStats(allCheckupsPrevRes.data || [], allDispensingPrevRes.data || [])
+    departmentStats.value = Object.entries(fullDeptMapRange)
+      .map(([dept, data]) => ({
+        department: dept,
+        patientCount: data.patientCount,
+        medicineCount: data.medicineCount,
+        change: computeChangePercent(data.patientCount, fullDeptMapPrev[dept]?.patientCount || 0)
+      }))
+      .sort((a, b) => b.patientCount - a.patientCount)
+
+    // Finalize Leave Stats with KPI
+    const getLeaveStats = (rows) => {
+      const map = {}
+      rows.forEach(r => {
+        if (r.is_leave_allowed) {
+          const d = r?.employees?.department || 'Unknown'
+          map[d] = (map[d] || 0) + 1
+        }
+      })
+      return map
+    }
+    const leaveMapRange = getLeaveStats(patientsRange)
+    const leaveMapPrev = getLeaveStats(patientsPrev)
+    leaveStats.value = Object.entries(leaveMapRange)
+      .map(([dept, count]) => ({
+        department: dept,
+        leaveCount: count,
+        change: computeChangePercent(count, leaveMapPrev[dept] || 0)
+      }))
+      .sort((a, b) => b.leaveCount - a.leaveCount)
 
   } catch (err) {
     console.error('Dashboard load error', err)
@@ -597,10 +653,17 @@ const exportDashboardPdf = async () => {
           <div class="card-diff muted">หน่วย</div>
         </div>
         <div class="card">
-          <div class="card-title">นำเข้ายาเดือนนี้</div>
-          <div class="card-val">${summary.value.importedThisMonth.value}</div>
-          <div class="card-diff ${summary.value.importedThisMonth.change >= 0 ? 'text-red' : 'text-green'}">
-             ${diffText(summary.value.importedThisMonth.value, prevImported.value)}
+          <div class="card-title">แผนกสูงสุด</div>
+          <div class="card-val">${summary.value.topDepartment.name}</div>
+          <div class="card-diff ${summary.value.topDepartment.change >= 0 ? 'text-red' : 'text-green'}">
+             ${diffText(summary.value.topDepartment.value, summary.value.topDepartment.value / (1 + summary.value.topDepartment.change/100))} (${summary.value.topDepartment.percentOfTotal.toFixed(1)}%)
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">โรคที่พบบ่อย</div>
+          <div class="card-val">${summary.value.topDiagnosis.name}</div>
+          <div class="card-diff ${summary.value.topDiagnosis.change >= 0 ? 'text-red' : 'text-green'}">
+             ${diffText(summary.value.topDiagnosis.value, summary.value.topDiagnosis.value / (1 + summary.value.topDiagnosis.change/100))} (${summary.value.topDiagnosis.percentOfTotal.toFixed(1)}%)
           </div>
         </div>
         <div class="card">
@@ -623,6 +686,7 @@ const exportDashboardPdf = async () => {
                 <th>แผนก</th>
                 <th class="text-right">ผู้ป่วย (คน)</th>
                 <th class="text-right">ใช้ยา (หน่วย)</th>
+                <th class="text-right">KPI</th>
               </tr>
             </thead>
             <tbody>
@@ -631,9 +695,12 @@ const exportDashboardPdf = async () => {
                   <td>${d.department}</td>
                   <td class="text-right">${d.patientCount}</td>
                   <td class="text-right">${d.medicineCount}</td>
+                  <td class="text-right ${d.change > 0 ? 'text-red' : d.change < 0 ? 'text-green' : ''}">
+                    ${d.change > 0 ? '+' : ''}${d.change.toFixed(1)}%
+                  </td>
                 </tr>
               `).join('')}
-              ${departmentStats.value.length === 0 ? '<tr><td colspan="3" class="muted text-center">ไม่มีข้อมูล</td></tr>' : ''}
+              ${departmentStats.value.length === 0 ? '<tr><td colspan="4" class="muted text-center">ไม่มีข้อมูล</td></tr>' : ''}
             </tbody>
           </table>
         </div>
@@ -654,6 +721,7 @@ const exportDashboardPdf = async () => {
             <th>รายการยา</th>
             <th>อาการที่พบบ่อย</th>
             <th class="text-right">จำนวนที่จ่าย</th>
+            <th class="text-right">KPI</th>
           </tr>
         </thead>
         <tbody>
@@ -662,9 +730,12 @@ const exportDashboardPdf = async () => {
               <td>${m.name}</td>
               <td>${m.diagnosis}</td>
               <td class="text-right">${m.dispensedCount}</td>
+              <td class="text-right ${m.change > 0 ? 'text-red' : m.change < 0 ? 'text-green' : ''}">
+                ${m.change > 0 ? '+' : ''}${m.change.toFixed(1)}%
+              </td>
             </tr>
           `).join('')}
-          ${medicineStats.value.length === 0 ? '<tr><td colspan="3" class="muted text-center">ไม่มีข้อมูล</td></tr>' : ''}
+          ${medicineStats.value.length === 0 ? '<tr><td colspan="4" class="muted text-center">ไม่มีข้อมูล</td></tr>' : ''}
         </tbody>
       </table>
     </div>
@@ -679,11 +750,19 @@ const exportDashboardPdf = async () => {
     <div class="section">
       <div style="display: flex; gap: 16px;">
         <div style="flex: 1;">
-          <h2>อาการที่พบบ่อย (Top Symptoms)</h2>
+          <h2>โรคที่พบบ่อย (Top Diagnosis)</h2>
           <table>
-            <thead><tr><th>อาการ/โรค</th><th class="text-right">จำนวนครั้ง</th></tr></thead>
+            <thead><tr><th>ชื่อโรค</th><th class="text-right">จำนวนครั้ง</th><th class="text-right">KPI</th></tr></thead>
             <tbody>
-              ${mostSymptoms.value.map(r => `<tr><td>${r.symptoms}</td><td class="text-right">${r.count}</td></tr>`).join('')}
+              ${topDiagnoses.value.map(r => `
+                <tr>
+                  <td>${r.diagnosis}</td>
+                  <td class="text-right">${r.count}</td>
+                  <td class="text-right ${r.change > 0 ? 'text-red' : r.change < 0 ? 'text-green' : ''}">
+                    ${r.change > 0 ? '+' : ''}${r.change.toFixed(1)}%
+                  </td>
+                </tr>
+              `).join('')}
             </tbody>
           </table>
         </div>
@@ -778,12 +857,12 @@ const exportDashboardPdf = async () => {
     </div>
 
     <!-- Summary Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
       <!-- Patients -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">ผู้ป่วย (ตามช่วงเวลา)</span>
-          <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+          <span class="text-xs text-slate-500 font-medium text-nowrap">ผู้ป่วย (รวม)</span>
+          <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
             <i class="fa-solid fa-user-injured text-clinic-blue dark:text-blue-400 text-sm"></i>
           </div>
         </div>
@@ -802,8 +881,8 @@ const exportDashboardPdf = async () => {
       <!-- Stock -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">สต็อกยารวม</span>
-          <div class="w-8 h-8 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center">
+          <span class="text-xs text-slate-500 font-medium text-nowrap">สต็อกยารวม</span>
+          <div class="w-8 h-8 rounded-full bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
             <i class="fa-solid fa-pills text-purple-600 dark:text-purple-400 text-sm"></i>
           </div>
         </div>
@@ -815,31 +894,63 @@ const exportDashboardPdf = async () => {
         </div>
       </div>
 
-      <!-- Import -->
+      <!-- Top Department -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">นำเข้า (ตามช่วงเวลา)</span>
-          <div class="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
-            <i class="fa-solid fa-truck-medical text-emerald-600 dark:text-emerald-400 text-sm"></i>
+          <span class="text-xs text-slate-500 font-medium text-nowrap">แผนกสูงสุด</span>
+          <div class="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-building-user text-emerald-600 dark:text-emerald-400 text-sm"></i>
           </div>
         </div>
-        <div class="text-2xl font-bold text-slate-800 dark:text-slate-100">
-          {{ summary.importedThisMonth.value }}
+        <div class="text-lg font-bold text-slate-800 dark:text-slate-100 truncate" :title="summary.topDepartment.name">
+          {{ summary.topDepartment.name }}
         </div>
-        <div
-          class="text-xs font-medium flex items-center gap-1"
-          :class="summary.importedThisMonth.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
-        >
-          <i :class="summary.importedThisMonth.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-          {{ Math.abs(summary.importedThisMonth.change).toFixed(1) }}% เทียบช่วงก่อนหน้า
+        <div class="flex items-center justify-between mt-auto">
+          <div class="text-xl font-bold text-emerald-600">{{ summary.topDepartment.value }}</div>
+          <div
+            class="text-[10px] font-medium flex items-center gap-0.5"
+            :class="summary.topDepartment.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
+          >
+            <i :class="summary.topDepartment.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+            {{ Math.abs(summary.topDepartment.change).toFixed(1) }}%
+          </div>
+        </div>
+        <div class="text-[10px] text-slate-400">
+          คิดเป็น {{ summary.topDepartment.percentOfTotal.toFixed(1) }}% ของทั้งหมด
+        </div>
+      </div>
+
+      <!-- Top Diagnosis -->
+      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-slate-500 font-medium text-nowrap">โรคที่พบบ่อย</span>
+          <div class="w-8 h-8 rounded-full bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-virus text-rose-600 dark:text-rose-400 text-sm"></i>
+          </div>
+        </div>
+        <div class="text-lg font-bold text-slate-800 dark:text-slate-100 truncate" :title="summary.topDiagnosis.name">
+          {{ summary.topDiagnosis.name }}
+        </div>
+        <div class="flex items-center justify-between mt-auto">
+          <div class="text-xl font-bold text-rose-600">{{ summary.topDiagnosis.value }}</div>
+          <div
+            class="text-[10px] font-medium flex items-center gap-0.5"
+            :class="summary.topDiagnosis.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
+          >
+            <i :class="summary.topDiagnosis.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+            {{ Math.abs(summary.topDiagnosis.change).toFixed(1) }}%
+          </div>
+        </div>
+        <div class="text-[10px] text-slate-400">
+          คิดเป็น {{ summary.topDiagnosis.percentOfTotal.toFixed(1) }}% ของทั้งหมด
         </div>
       </div>
 
       <!-- Dispensed -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium">จ่ายยา (ตามช่วงเวลา)</span>
-          <div class="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center">
+          <span class="text-xs text-slate-500 font-medium text-nowrap">ยาที่จ่ายไป</span>
+          <div class="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
             <i class="fa-solid fa-prescription-bottle-medical text-orange-600 dark:text-orange-400 text-sm"></i>
           </div>
         </div>
@@ -856,12 +967,12 @@ const exportDashboardPdf = async () => {
       </div>
     </div>
 
-    <!-- Charts Section -->
+    <!-- Middle Section (6-6) -->
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
       <!-- KPI Chart -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 h-80 flex flex-col shadow-sm">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-sm font-semibold text-slate-800 dark:text-white">แนวโน้ม 15 วันล่าสุด</h2>
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-white">แนวโน้มการรับรักษา</h2>
           <span class="text-xs text-slate-500">ผู้ป่วย vs การจ่ายยา</span>
         </div>
         <div class="flex-1 min-h-0 relative w-full">
@@ -883,7 +994,7 @@ const exportDashboardPdf = async () => {
       <!-- Department Chart -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 h-80 flex flex-col shadow-sm">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-sm font-semibold text-slate-800 dark:text-white">สถิติรายแผนก (Top Departments)</h2>
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-white">สถิติรายแผนก (ผู้ป่วยและการใช้ยา)</h2>
           <span class="text-xs text-slate-500">เปรียบเทียบผู้ป่วยและการใช้ยา</span>
         </div>
         <div class="flex-1 min-h-0 relative w-full">
@@ -903,76 +1014,149 @@ const exportDashboardPdf = async () => {
       </div>
     </div>
 
-    <!-- Stats Lists -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- Most Symptoms -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm">
-        <h2 class="text-sm font-semibold text-slate-800 dark:text-white mb-2">
-          <i class="fa-solid fa-virus text-rose-500 mr-2"></i>
-          อาการที่พบบ่อย (Top Symptoms)
+    <!-- Middle-Bottom Section (3-3-3-3) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <!-- Top Diagnosis List -->
+      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm flex flex-col">
+        <h2 class="text-xs font-semibold text-slate-800 dark:text-white mb-2 flex items-center justify-between">
+          <span><i class="fa-solid fa-virus text-rose-500 mr-1"></i> โรคที่พบบ่อย (Top 7)</span>
+          <span class="text-[10px] font-normal text-slate-400">KPI</span>
         </h2>
-        <div v-if="mostSymptoms.length" class="space-y-2 text-xs">
+        <div v-if="topDiagnoses.length" class="space-y-1.5 text-[11px] flex-1">
           <div
-            v-for="(row, i) in mostSymptoms"
-            :key="row.symptoms"
-            class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-700/50"
+            v-for="(row, i) in topDiagnoses.slice(0, 7)"
+            :key="row.diagnosis"
+            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50"
           >
-            <div class="flex items-center gap-2 overflow-hidden">
-              <span class="w-5 h-5 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[10px] shadow-sm">
+            <div class="flex items-center gap-1.5 overflow-hidden">
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm">
                 {{ i + 1 }}
               </span>
-              <span class="truncate font-medium text-slate-700 dark:text-slate-200">{{ row.symptoms || 'ไม่ระบุ' }}</span>
+              <span class="truncate font-medium text-slate-700 dark:text-slate-200" :title="row.diagnosis">{{ row.diagnosis }}</span>
             </div>
-            <span class="font-bold text-slate-900 dark:text-white bg-white dark:bg-slate-600 px-2 py-0.5 rounded shadow-sm">{{ row.count }}</span>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="font-bold text-slate-900 dark:text-white">{{ row.count }}</span>
+              <span 
+                class="text-[9px] font-bold"
+                :class="row.change > 0 ? 'text-red-500' : row.change < 0 ? 'text-emerald-500' : 'text-orange-500'"
+              >
+                {{ row.change > 0 ? '+' : '' }}{{ row.change.toFixed(1) }}%
+              </span>
+            </div>
           </div>
-        </div>
-        <div v-else class="text-xs text-slate-400 text-center py-4">
-          ไม่มีข้อมูล
         </div>
       </div>
 
-      <!-- Medicine Stats Table -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm">
-        <h2 class="text-sm font-semibold text-slate-800 dark:text-white mb-2">
-          <i class="fa-solid fa-pills text-indigo-500 mr-2"></i>
-          รายการยาที่ใช้มากที่สุด (Top 7)
+      <!-- Medicine Stats -->
+      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm flex flex-col">
+        <h2 class="text-xs font-semibold text-slate-800 dark:text-white mb-2 flex items-center justify-between">
+          <span><i class="fa-solid fa-pills text-indigo-500 mr-1"></i> รายการยาใช้มาก (Top 7)</span>
+          <span class="text-[10px] font-normal text-slate-400">KPI</span>
         </h2>
-        <div class="overflow-x-auto max-h-[300px]">
-          <table class="min-w-full text-xs">
-            <thead class="sticky top-0 bg-white dark:bg-slate-800 z-10">
-              <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
-                <th class="py-2 pr-3">รายการยา</th>
-                <th class="py-2 pr-3">อาการหลัก</th>
-                <th class="py-2 pr-3 text-right">จำนวนจ่าย</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="m in medicineStats.slice(0, 7)"
-                :key="m.name"
-                class="border-b border-clinic-border/60 dark:border-slate-800 last:border-0"
+        <div v-if="medicineStats.length" class="space-y-1.5 text-[11px] flex-1">
+          <div
+            v-for="(row, i) in medicineStats.slice(0, 7)"
+            :key="row.name"
+            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50"
+          >
+            <div class="flex items-center gap-1.5 overflow-hidden">
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm">
+                {{ i + 1 }}
+              </span>
+              <span class="truncate font-medium text-slate-700 dark:text-slate-200" :title="row.name">{{ row.name }}</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="font-bold text-slate-900 dark:text-white">{{ row.dispensedCount }}</span>
+              <span 
+                class="text-[9px] font-bold"
+                :class="row.change > 0 ? 'text-red-500' : row.change < 0 ? 'text-emerald-500' : 'text-orange-500'"
               >
-                <td class="py-2 pr-3 font-medium text-slate-700 dark:text-white">{{ m.name }}</td>
-                <td class="py-2 pr-3 text-slate-500 italic">{{ m.diagnosis }}</td>
-                <td class="py-2 pr-3 text-right font-bold">{{ m.dispensedCount }}</td>
-              </tr>
-              <tr v-if="!medicineStats.length">
-                <td colspan="3" class="py-8 text-center text-slate-400">
-                  ไม่มีข้อมูลการจ่ายยา
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                {{ row.change > 0 ? '+' : '' }}{{ row.change.toFixed(1) }}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Department Stats (Scrollable) -->
+      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-semibold text-slate-800 dark:text-white">
+            <i class="fa-solid fa-building text-emerald-500 mr-1"></i> แผนกทั้งหมด
+          </h2>
+          <div class="flex gap-1">
+            <button @click="deptPageIndex = Math.max(0, deptPageIndex - 1)" class="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-slate-400"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>
+            <button @click="deptPageIndex++" :disabled="(deptPageIndex + 1) * 7 >= departmentStats.length" class="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-slate-400 disabled:opacity-30"><i class="fa-solid fa-chevron-right text-[10px]"></i></button>
+          </div>
+        </div>
+        <div v-if="departmentStats.length" class="space-y-1.5 text-[11px] flex-1">
+          <div
+            v-for="(row, i) in departmentStats.slice(deptPageIndex * 7, (deptPageIndex + 1) * 7)"
+            :key="row.department"
+            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50"
+          >
+            <div class="flex items-center gap-1.5 overflow-hidden">
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm">
+                {{ deptPageIndex * 7 + i + 1 }}
+              </span>
+              <span class="truncate font-medium text-slate-700 dark:text-slate-200" :title="row.department">{{ row.department }}</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="font-bold text-slate-900 dark:text-white">{{ row.patientCount }}</span>
+              <span 
+                class="text-[9px] font-bold"
+                :class="row.change > 0 ? 'text-red-500' : row.change < 0 ? 'text-emerald-500' : 'text-orange-500'"
+              >
+                {{ row.change > 0 ? '+' : '' }}{{ row.change.toFixed(1) }}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leave Stats (Scrollable) -->
+      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-semibold text-slate-800 dark:text-white">
+            <i class="fa-solid fa-calendar-xmark text-amber-500 mr-1"></i> การลาพักแยกแผนก
+          </h2>
+          <div class="flex gap-1">
+            <button @click="leavePageIndex = Math.max(0, leavePageIndex - 1)" class="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-slate-400"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>
+            <button @click="leavePageIndex++" :disabled="(leavePageIndex + 1) * 7 >= leaveStats.length" class="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-slate-400 disabled:opacity-30"><i class="fa-solid fa-chevron-right text-[10px]"></i></button>
+          </div>
+        </div>
+        <div v-if="leaveStats.length" class="space-y-1.5 text-[11px] flex-1">
+          <div
+            v-for="(row, i) in leaveStats.slice(leavePageIndex * 7, (leavePageIndex + 1) * 7)"
+            :key="row.department"
+            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50"
+          >
+            <div class="flex items-center gap-1.5 overflow-hidden">
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm">
+                {{ leavePageIndex * 7 + i + 1 }}
+              </span>
+              <span class="truncate font-medium text-slate-700 dark:text-slate-200" :title="row.department">{{ row.department }}</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="font-bold text-slate-900 dark:text-white">{{ row.leaveCount }}</span>
+              <span 
+                class="text-[9px] font-bold"
+                :class="row.change > 0 ? 'text-red-500' : row.change < 0 ? 'text-emerald-500' : 'text-orange-500'"
+              >
+                {{ row.change > 0 ? '+' : '' }}{{ row.change.toFixed(1) }}%
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Last Patients Table -->
+    <!-- Last Patients Table (Bottom 12) -->
     <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 shadow-sm">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-sm font-semibold text-slate-800 dark:text-white">
           <i class="fa-regular fa-clock text-blue-500 mr-2"></i>
-          ผู้ป่วยล่าสุด
+          ผู้ป่วยล่าสุด (เรียงตามเวลา)
         </h2>
       </div>
       <div class="overflow-x-auto">
@@ -993,25 +1177,17 @@ const exportDashboardPdf = async () => {
               :key="row.id"
               class="border-b border-clinic-border/60 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
             >
-              <td class="py-2 px-3 text-slate-500">
-                {{ new Date(row.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) }}
+              <td class="py-2 px-3 text-slate-500 whitespace-nowrap">
+                {{ new Date(row.created_at).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' }) }}
               </td>
               <td class="py-2 px-3 font-mono text-slate-500">{{ row.employee_code }}</td>
               <td class="py-2 px-3 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
-              <td class="py-2 px-3">
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                  {{ row.department }}
-                </span>
-              </td>
-              <td class="py-2 px-3 text-slate-600 dark:text-slate-400">{{ row.diagnosis }}</td>
-              <td class="py-2 px-3 text-right font-medium text-slate-700 dark:text-slate-300">
-                {{ row.amount }}
-              </td>
+              <td class="py-2 px-3 text-slate-500">{{ row.department }}</td>
+              <td class="py-2 px-3 text-slate-600 dark:text-slate-400 italic">{{ row.diagnosis || row.symptoms }}</td>
+              <td class="py-2 px-3 text-right font-bold text-clinic-blue">{{ row.amount }}</td>
             </tr>
             <tr v-if="!lastPatients.length">
-              <td colspan="6" class="py-8 text-center text-slate-400">
-                ยังไม่มีผู้ป่วยวันนี้
-              </td>
+              <td colspan="6" class="py-8 text-center text-slate-400">ไม่พบข้อมูลผู้ป่วยล่าสุด</td>
             </tr>
           </tbody>
         </table>
@@ -1019,3 +1195,9 @@ const exportDashboardPdf = async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.text-nowrap {
+  white-space: nowrap;
+}
+</style>

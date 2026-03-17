@@ -10,7 +10,7 @@ const showEmployeeOptions = ref(false)
 let employeeSearchTimer = null
 const suppressEmployeeSearch = ref(false)
 
-const clinicLocation = ref('ไทยดริว-สิริสิน')
+const clinicLocation = ref('ไทยดริว-เมืองวัง')
 const temp = ref('')
 const bp = ref('')
 const pulse = ref('')
@@ -702,7 +702,7 @@ const saveCheckup = async () => {
     employeeInfo.value = null
     employeeOptions.value = []
     showEmployeeOptions.value = false
-    clinicLocation.value = 'ไทยดริว-สิริสิน'
+    clinicLocation.value = 'ไทยดริว-เมืองวัง'
     temp.value = ''
     bp.value = ''
     pulse.value = ''
