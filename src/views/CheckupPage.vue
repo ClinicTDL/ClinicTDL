@@ -18,6 +18,7 @@ const rr = ref('')
 const spo2 = ref('')
 const symptoms = ref('')
 const diagnosis = ref('')
+const remark = ref('')
 const isLeaveAllowed = ref(false)
 const leaveStart = ref('')
 const leaveEnd = ref('')
@@ -628,6 +629,7 @@ const saveCheckup = async () => {
         spo2: spo2Num,
         symptoms: symptoms.value || null,
         diagnosis: diagnosis.value || null,
+        remark: remark.value || null,
         is_leave_allowed: isLeaveAllowed.value,
         leave_start: leaveStart.value || null,
         leave_end: leaveEnd.value || null,
@@ -710,6 +712,7 @@ const saveCheckup = async () => {
     spo2.value = ''
     symptoms.value = ''
     diagnosis.value = ''
+    remark.value = ''
     isLeaveAllowed.value = false
     leaveStart.value = ''
     leaveEnd.value = ''
@@ -949,9 +952,18 @@ watch([leaveStart, leaveEnd], () => {
                 <input v-model="leaveEnd" type="date" class="w-full rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs" />
               </div>
               <div>
-              <label class="block text-[11px] font-medium mb-1">จำนวนวันลาพัก</label>
-              <input v-model="totalLeaveDays" type="number" min="0" readonly class="w-full rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs" />
+                <label class="block text-[11px] font-medium mb-1">จำนวนวันลาพัก</label>
+                <input v-model="totalLeaveDays" type="number" min="0" readonly class="w-full rounded border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs" />
+              </div>
             </div>
+             <div>
+              <label class="block text-xs font-medium mb-1">หมายเหตุ (Remark)</label>
+              <input
+                v-model="remark"
+                type="text"
+                placeholder="เช่น มาตรวจอีกรอบ, มาตรวจคืน, ..."
+                class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              />
             </div>
             <div class="flex items-center gap-4 text-xs">
               <label class="inline-flex items-center gap-2">

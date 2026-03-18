@@ -73,7 +73,8 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
     updated_by uuid (REF with system_users.id),
     created_at timestamp,
     updated_at timestamp,
-    round text
+    round text,
+    remark text
 
 6. depensing_records
     id uuid,

@@ -71,7 +71,7 @@ const drawExportCanvas = async () => {
   await ensureCanvasFont()
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
   const width = 1280
-  const height = 980
+  const height = 1000
   canvas.width = width * dpr
   canvas.height = height * dpr
   canvas.style.width = width + 'px'
@@ -80,13 +80,13 @@ const drawExportCanvas = async () => {
   ctx.scale(dpr, dpr)
 
   const isDark = document.documentElement.classList.contains('dark')
-  const colorBg = isDark ? '#0f172a' : '#ffffff'
-  const colorText = isDark ? '#e2e8f0' : '#0f172a'
-  const labelColor = isDark ? '#94a3b8' : '#64748b'
-  const borderColor = isDark ? '#334155' : '#e2e8f0'
-  const subtle = isDark ? '#0b1220' : '#f8fafc'
-  const panel = isDark ? '#111827' : '#ffffff'
-  const rowAlt = isDark ? '#1e293b' : '#f1f5f9'
+  const colorBg = isDark ? '#1e293b' : '#f1f5f9' // slate-800 : slate-100
+  const colorText = isDark ? '#f1f5f9' : '#1e293b' // slate-100 : slate-800
+  const labelColor = isDark ? '#94a3b8' : '#64748b' // slate-400 : slate-500
+  const borderColor = isDark ? '#334155' : '#cbd5e1' // slate-700 : slate-300
+  const subtle = isDark ? '#0f172a' : '#ffffff' // slate-900 : white
+  const panel = isDark ? '#1e293b' : '#f8fafc' // slate-800 : slate-50
+  const rowAlt = isDark ? '#334155' : '#e2e8f0' // slate-700 : slate-200
 
   // Background
   ctx.fillStyle = colorBg
@@ -96,7 +96,7 @@ const drawExportCanvas = async () => {
   ctx.fillStyle = colorText
   ctx.font = '600 16px "SF Thonburi","Noto Sans Thai", Arial'
   const loc = exportData.value?.clinic_location || '-'
-  const dt = new Date(exportData.value?.created_at || Date.now()).toLocaleString('th-TH')
+  const dt = new Date(exportData.value?.created_at || Date.now()).toLocaleString('en-UK')
   ctx.textAlign = 'right'
   ctx.fillText(`ที่: ${loc} / ${dt}`, width - 40, 40)
   
@@ -216,10 +216,11 @@ const drawExportCanvas = async () => {
   const allergyText = empInfo.drug_allergy ? `แพ้ยา: ${empInfo.drug_allergy}` : ''
   const condText = empInfo.congenital_disease ? `โรคประจำตัว: ${empInfo.congenital_disease}` : ''
   const combined = [allergyText, condText].filter(Boolean).join(' / ') || '-'
-  drawField(ctx, 'แพ้ยา / โรคประจำตัว:', combined, rx, ry, rightW - 80, boxH, colorText, borderColor, panel)
+  const allergyColor = (empInfo.drug_allergy || empInfo.congenital_disease) ? '#ef4444' : colorText
+  drawField(ctx, 'แพ้ยา / โรคประจำตัว:', combined, rx, ry, rightW - 80, boxH, colorText, borderColor, panel, allergyColor)
   ry += boxH + gapY
 
-  // Leave Info
+  // Leave Info / Remark
   let leaveText = '-'
   if (p?.is_leave_allowed === false) {
     leaveText = 'ไม่อนุญาตให้พัก'
@@ -227,13 +228,16 @@ const drawExportCanvas = async () => {
     const start = formatDateYY(p?.leave_start)
     const end = formatDateYY(p?.leave_end)
     const days = p?.total_leave_days || 0
-    leaveText = `อนุญาตลาพัก: ${start} ถึง ${end} (รวม ${days} วัน)`
+    leaveText = `${start} - ${end} (${days} วัน)`
   }
-  drawField(ctx, 'ข้อมูลการลาพัก:', leaveText, rx, ry, rightW - 80, boxH, colorText, borderColor, panel)
+  const remarkText = p?.remark || '-'
+  drawField(ctx, 'ข้อมูลการลาพัก:', leaveText, rx, ry, halfW, boxH, colorText, borderColor, panel)
+  drawField(ctx, 'หมายเหตุ:', remarkText, rx + halfW + 18, ry, halfW, boxH, colorText, borderColor, panel)
   ry += boxH + gapY
 
   // Dispensing table
   ctx.font = '700 22px "SF Thonburi","Noto Sans Thai", Arial'
+  ctx.fillStyle = colorText
   ctx.fillText('การจ่ายยา', rx, ry)
   ry += 30
   
@@ -421,8 +425,24 @@ async function drawCircleImage(ctx, url, x, y, w, h, isDark) {
   ctx.clip()
   if (img) ctx.drawImage(img, x, y, w, h)
   else {
-    ctx.fillStyle = isDark ? '#0b1220' : '#e2e8f0'
+    ctx.fillStyle = isDark ? '#1e293b' : '#f1f5f9'
     ctx.fillRect(x, y, w, h)
+    
+    // Draw simple person icon placeholder
+    ctx.strokeStyle = isDark ? '#475569' : '#cbd5e1'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    // Head
+    ctx.arc(x + r, y + r - 15, 20, 0, Math.PI * 2)
+    // Shoulders
+    ctx.moveTo(x + r - 35, y + r + 35)
+    ctx.quadraticCurveTo(x + r, y + r + 10, x + r + 35, y + r + 35)
+    ctx.stroke()
+
+    ctx.fillStyle = isDark ? '#94a3b8' : '#64748b'
+    ctx.font = '700 16px "SF Thonburi","Noto Sans Thai", Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText('ไม่มีรูป', x + r, y + r + 55)
   }
   ctx.restore()
 }
@@ -438,7 +458,7 @@ function loadImg(url) {
   })
 }
 
-function drawField(ctx, label, value, x, y, w, h, colorText, borderColor, fill) {
+function drawField(ctx, label, value, x, y, w, h, colorText, borderColor, fill, valueColor) {
   ctx.fillStyle = colorText
   ctx.font = '700 14px "SF Thonburi","Noto Sans Thai", Arial'
   // Draw label even closer to the box
@@ -450,8 +470,8 @@ function drawField(ctx, label, value, x, y, w, h, colorText, borderColor, fill) 
   ctx.lineWidth = 1
   ctx.stroke()
   
-  ctx.fillStyle = colorText
-  ctx.font = '500 16px "SF Thonburi","Noto Sans Thai", Arial'
+  ctx.fillStyle = valueColor || colorText
+  ctx.font = (valueColor && valueColor !== colorText) ? '700 16px "SF Thonburi","Noto Sans Thai", Arial' : '500 16px "SF Thonburi","Noto Sans Thai", Arial'
   ctx.textBaseline = 'middle'
   const txt = (value ?? '').toString()
   
@@ -802,17 +822,19 @@ const viewImage = (u) => {
                 :href="viewImage(r.image_url)"
                 target="_blank"
                 rel="noopener"
-                class="inline-flex items-center justify-center w-12 h-12 rounded border border-clinic-border dark:border-slate-700 text-slate-400 hover:text-slate-600"
-                title="View Image"
+                class="inline-flex flex-col items-center justify-center w-16 h-16 rounded border border-clinic-border dark:border-slate-700 text-slate-400 hover:text-slate-600"
+                title="คลิกเพื่อดูรูป"
               >
-                <i class="fa-regular fa-image text-lg"></i>
+                <i class="fa-regular fa-image text-xl"></i>
+                <span class="text-[10px] mt-0.5">ดูรูปภาพ</span>
               </a>
               <div
                 v-else
-                class="inline-flex items-center justify-center w-12 h-12 rounded border border-clinic-border dark:border-slate-700 text-slate-300 bg-slate-50 dark:bg-slate-800/50 cursor-default"
-                title="No Image"
+                class="inline-flex flex-col items-center justify-center w-16 h-16 rounded border border-dashed border-clinic-border dark:border-slate-700 text-slate-300 bg-slate-50 dark:bg-slate-800/50 cursor-default"
+                title="ไม่มีรูป"
               >
-                <i class="fa-solid fa-image-slash text-lg"></i>
+                <i class="fa-solid fa-image-slash text-xl"></i>
+                <span class="text-[10px] mt-0.5">ไม่มีรูป</span>
               </div>
             </td>
             <td class="py-1.5 pr-3">{{ r.examiner }}</td>
@@ -844,10 +866,10 @@ const viewImage = (u) => {
           <div class="font-bold text-lg">ส่งออกข้อมูลผู้ป่วย (PNG)</div>
           <button @click="showExportModal=false" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times"></i></button>
         </div>
-        <div class="p-4 flex-1 overflow-auto">
+        <div class="p-4 flex-1 overflow-auto bg-slate-50 dark:bg-slate-950">
           <div class="text-xs text-slate-500 mb-2">แสดงตัวอย่างก่อนดาวน์โหลด</div>
           <div class="flex items-center justify-center bg-clinic-light dark:bg-slate-800 rounded-xl p-3">
-            <canvas ref="exportCanvasRef"></canvas>
+            <canvas ref="exportCanvasRef" class="max-w-full h-auto"></canvas>
           </div>
           <div v-if="exportLoading" class="text-xs text-slate-500 mt-2">กำลังเตรียมข้อมูล...</div>
         </div>
