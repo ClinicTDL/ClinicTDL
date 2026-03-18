@@ -47,7 +47,7 @@ const formData = ref({
   unit: '',
   quantity: 0,
   category: 'ยาทั่วไป',
-  note: ''
+  remark: ''
 })
 
 const loadMedicines = async () => {
@@ -139,7 +139,7 @@ const openAddSidebar = () => {
     unit: '',
     quantity: 1,
     category: 'ยาทั่วไป',
-    note: ''
+    remark: ''
   }
   selectedMedicine.value = null
   showSidebar.value = true
@@ -154,7 +154,7 @@ const openRestockSidebar = (medicine) => {
     unit: medicine.unit,
     quantity: 1,
     category: medicine.group || 'ยาทั่วไป',
-    note: ''
+    remark: ''
   }
   showSidebar.value = true
 }
@@ -189,7 +189,8 @@ const handleSaveRequest = async () => {
       medicine_id: selectedMedicine.value?.id || null,
       quantity: formData.value.quantity,
       category: formData.value.category,
-      note_transaction: sidebarMode.value === 'add' ? 'ยาเข้าใหม่(นำเข้าครั้งแรก)' : (formData.value.note || 'เติมสินค้า'),
+      note_transaction: sidebarMode.value === 'add' ? 'ยาเข้าใหม่(นำเข้าครั้งแรก)' : 'เติมสินค้า',
+      remark: formData.value.remark,
       // Store temporary medicine info in 'note' column as JSON for new items
       note: sidebarMode.value === 'add' ? JSON.stringify({
         name: formData.value.name,
@@ -380,9 +381,9 @@ onMounted(loadMedicines)
             <label class="block text-xs font-medium mb-1">จำนวน</label>
             <input v-model.number="formData.quantity" type="number" min="1" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" />
           </div>
-          <div v-if="sidebarMode === 'restock'">
-            <label class="block text-xs font-medium mb-1">หมายเหตุ</label>
-            <textarea v-model="formData.note" rows="3" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800"></textarea>
+          <div>
+            <label class="block text-xs font-medium mb-1">เหตุผล/หมายเหตุ</label>
+            <textarea v-model="formData.remark" rows="3" placeholder="ระบุเหตุผล (ถ้ามี)..." class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800"></textarea>
           </div>
         </div>
 
@@ -405,17 +406,19 @@ onMounted(loadMedicines)
           <table class="min-w-full text-xs">
             <thead>
               <tr class="text-left text-slate-500 border-b">
-                <th class="pb-2">วันที่แจ้ง</th>
-                <th class="pb-2">รายการ</th>
-                <th class="pb-2">จำนวน</th>
-                <th class="pb-2">ประเภท</th>
-                <th class="pb-2">ผู้แจ้ง</th>
+                <th class="pb-3 text-center">วันที่แจ้ง</th>
+                <th class="pb-3 text-center">รายการ</th>
+                <th class="pb-3 text-center">จำนวน</th>
+                <th class="pb-3 text-center">ประเภท</th>
+                <th class="pb-3 text-center">สถานะ</th>
+                <th class="pb-3 text-center">เหตุผล</th>
+                <th class="pb-3 text-center">ผู้แจ้ง</th>
               </tr>
             </thead>
             <tbody class="divide-y">
               <tr v-for="item in pendingImports" :key="item.id">
-                <td class="py-3">{{ new Date(item.created_at).toLocaleString('th-TH') }}</td>
-                <td class="py-3">
+                <td class="py-3 text-center">{{ new Date(item.created_at).toLocaleString('th-TH') }}</td>
+                <td class="py-3 text-center">
                   <div class="font-medium text-slate-900 dark:text-white">
                     {{ item.medicine?.name || (safeParse(item.note)?.name || '-') }}
                   </div>
@@ -423,19 +426,27 @@ onMounted(loadMedicines)
                     {{ item.medicine?.sku || (safeParse(item.note)?.sku || '-') }}
                   </div>
                 </td>
-                <td class="py-3">
+                <td class="py-3 text-center">
                   <span class="font-bold text-clinic-blue">+{{ item.quantity }}</span>
                   <span class="ml-1 text-slate-400">{{ item.medicine?.unit || (safeParse(item.note)?.unit || '') }}</span>
                 </td>
-                <td class="py-3">
+                <td class="py-3 text-center">
                   <span :class="item.medicine_id ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'" class="px-2 py-0.5 rounded-full text-[10px]">
                     {{ item.medicine_id ? 'เติมสต็อก' : 'ยาใหม่' }}
                   </span>
                 </td>
-                <td class="py-3 text-slate-500">{{ item.requester?.full_name || '-' }}</td>
+                <td class="py-3 text-center">
+                  <span :class="{
+                    'text-amber-600': item.status==='pending',
+                    'text-emerald-600 dark:text-emerald-400': item.status==='approved',
+                    'text-red-600': item.status==='rejected'
+                  }">{{ item.status==='pending' ? 'รอการอนุมัติ' : (item.status==='approved' ? 'อนุมัติแล้ว' : (item.status==='rejected' ? 'ปฏิเสธแล้ว' : item.status)) }}</span>
+                </td>
+                <td class="py-3 text-center text-slate-500">{{ item.remark || '-' }}</td>
+                <td class="py-3 text-center text-slate-500">{{ item.requester?.full_name || '-' }}</td>
               </tr>
               <tr v-if="!pendingImports.length">
-                <td colspan="5" class="py-8 text-center text-slate-400">ไม่มีรายการรอตรวจสอบ</td>
+                <td colspan="6" class="py-8 text-center text-slate-400">ไม่มีรายการรอตรวจสอบ</td>
               </tr>
             </tbody>
           </table>

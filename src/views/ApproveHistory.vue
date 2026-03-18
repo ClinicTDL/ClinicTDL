@@ -80,6 +80,7 @@ const applyFilter = () => {
         r?.approver?.full_name || '',
         r?.category || '',
         r?.status || '',
+        r?.remark || '',
       ].join(' ').toLowerCase()
       if (!hay.includes(s)) return false
     }
@@ -130,6 +131,7 @@ onMounted(loadData)
             <th class="py-2 pr-3">จำนวน</th>
             <th class="py-2 pr-3">ประเภท</th>
             <th class="py-2 pr-3">สถานะ</th>
+            <th class="py-2 pr-3">เหตุผล</th>
             <th class="py-2 pr-3">ผู้แจ้ง</th>
             <th class="py-2 pr-3">ผู้อนุมัติ</th>
           </tr>
@@ -163,6 +165,7 @@ onMounted(loadData)
                 'text-red-600': r.status==='rejected'
               }">{{ r.status==='pending' ? 'รอการอนุมัติ' : (r.status==='approved' ? 'อนุมัติแล้ว' : (r.status==='rejected' ? 'ปฏิเสธแล้ว' : r.status)) }}</span>
             </td>
+            <td class="py-2 pr-3 max-w-[150px] truncate" :title="r.remark">{{ r.remark || '-' }}</td>
             <td class="py-2 pr-3">{{ r.requester?.full_name || '-' }}</td>
             <td class="py-2 pr-3">{{ r.approver?.full_name || '-' }}</td>
           </tr>

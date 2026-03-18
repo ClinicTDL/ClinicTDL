@@ -386,7 +386,7 @@ const processRejection = async () => {
       .from('medicine_import_logs')
       .update({
         status: 'rejected',
-        note: rejectionNote.value,
+        remark: rejectionNote.value,
         updated_at: new Date()
       })
       .eq('id', selectedImport.value.id)
@@ -510,12 +510,13 @@ onMounted(loadMedicines)
           <table class="min-w-full text-xs">
             <thead>
               <tr class="text-left text-slate-500 border-b">
-                <th class="pb-2">วันที่แจ้ง</th>
-                <th class="pb-2">รายการ</th>
-                <th class="pb-2">จำนวน</th>
-                <th class="pb-2">ประเภทการแจ้ง</th>
-                <th class="pb-2">ผู้แจ้ง</th>
-                <th class="pb-2 text-right">ดำเนินการ</th>
+                <th class="pb-2 text-slate-500 text-[12px]">วันที่แจ้ง</th>
+                <th class="pb-2 text-slate-500 text-[12px]">รายการ</th>
+                <th class="pb-2 text-slate-500 text-[12px]">จำนวน</th>
+                <th class="pb-2 text-slate-500 text-[12px]">ประเภท</th>
+                <th class="pb-2 text-slate-500 text-[12px]">เหตุผล</th>
+                <th class="pb-2 text-slate-500 text-[12px]">ผู้แจ้ง</th>
+                <th class="pb-2 text-slate-500 text-[12px] text-right">ดำเนินการ</th>
               </tr>
             </thead>
             <tbody class="divide-y">
@@ -538,13 +539,14 @@ onMounted(loadMedicines)
                     {{ item.medicine_id ? 'เติมสต็อก' : 'ยาใหม่' }}
                   </span>
                 </td>
+                <td class="py-3 text-slate-500 text-[12px]">{{ item.remark || '-' }}</td>
                 <td class="py-3 text-slate-600 dark:text-slate-300 text-[12px]">{{ item.requester?.full_name || '-' }}</td>
                 <td class="py-3 text-right">
                   <button @click="openApprovalSidebar(item)" class="text-amber-600 dark:text-amber-400 hover:underline font-medium text-[12px]">กดเพื่ออนุมัติ</button>
                 </td>
               </tr>
               <tr v-if="!pendingImports.length">
-                <td colspan="6" class="py-8 text-center text-slate-400">ไม่มีรายการรอตรวจสอบ</td>
+                <td colspan="7" class="py-8 text-center text-slate-400">ไม่มีรายการรอตรวจสอบ</td>
               </tr>
             </tbody>
           </table>

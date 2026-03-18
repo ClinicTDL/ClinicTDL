@@ -92,6 +92,7 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
     document_url TEXT,
     note TEXT,
     note_transaction TEXT, // สำหรับสถานะเช่น: ยาเข้าใหม่(นำเข้าครั้งแรก), เติมสินค้า //
+    remark TEXT,
     created_by uuid REFERENCES system_users(id),
     approved_by uuid REFERENCES system_users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
