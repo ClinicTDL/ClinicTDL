@@ -17,6 +17,16 @@ try {
 }
 
 const loading = ref(false)
+
+const safeParse = (str) => {
+  if (!str) return {}
+  try {
+    return JSON.parse(str)
+  } catch (e) {
+    return {}
+  }
+}
+
 const medicines = ref([])
 const search = ref('')
 const unitFilter = ref('')
@@ -407,15 +417,15 @@ onMounted(loadMedicines)
                 <td class="py-3">{{ new Date(item.created_at).toLocaleString('th-TH') }}</td>
                 <td class="py-3">
                   <div class="font-medium text-slate-900 dark:text-white">
-                    {{ item.medicine?.name || (JSON.parse(item.note||'{}')?.name || '-') }}
+                    {{ item.medicine?.name || (safeParse(item.note)?.name || '-') }}
                   </div>
                   <div class="text-[10px] text-slate-400">
-                    {{ item.medicine?.sku || (JSON.parse(item.note||'{}')?.sku || '-') }}
+                    {{ item.medicine?.sku || (safeParse(item.note)?.sku || '-') }}
                   </div>
                 </td>
                 <td class="py-3">
                   <span class="font-bold text-clinic-blue">+{{ item.quantity }}</span>
-                  <span class="ml-1 text-slate-400">{{ item.medicine?.unit || (JSON.parse(item.note||'{}')?.unit || '') }}</span>
+                  <span class="ml-1 text-slate-400">{{ item.medicine?.unit || (safeParse(item.note)?.unit || '') }}</span>
                 </td>
                 <td class="py-3">
                   <span :class="item.medicine_id ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'" class="px-2 py-0.5 rounded-full text-[10px]">

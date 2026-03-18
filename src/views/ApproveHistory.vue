@@ -11,6 +11,15 @@ const dateStart = ref('')
 const dateEnd = ref('')
 const router = useRouter()
 
+const safeParse = (str) => {
+  if (!str) return {}
+  try {
+    return JSON.parse(str)
+  } catch (e) {
+    return {}
+  }
+}
+
 const onImgError = (e) => {
   const el = e.target
   if (el?.dataset?.altTried) return
@@ -64,7 +73,7 @@ const applyFilter = () => {
       if (t > end) return false
     }
     if (s) {
-      const info = JSON.parse(r.note || '{}')
+      const info = safeParse(r.note)
       const hay = [
         r?.medicine?.name || info?.name || '',
         r?.requester?.full_name || '',
@@ -136,15 +145,15 @@ onMounted(loadData)
             </td>
             <td class="py-2 pr-3">
               <div class="font-medium text-slate-900 dark:text-slate-100">
-                {{ r.medicine?.name || (JSON.parse(r.note || '{}')?.name || '-') }}
+                {{ r.medicine?.name || (safeParse(r.note)?.name || '-') }}
               </div>
               <div class="text-[10px] text-slate-400">
-                {{ r.medicine?.sku || (JSON.parse(r.note || '{}')?.sku || '-') }}
+                {{ r.medicine?.sku || (safeParse(r.note)?.sku || '-') }}
               </div>
             </td>
             <td class="py-2 pr-3">
               <span class="font-bold text-emerald-600 dark:text-emerald-400">+{{ r.quantity }}</span>
-              <span class="ml-1 text-slate-400">{{ r.medicine?.unit || (JSON.parse(r.note || '{}')?.unit || '') }}</span>
+              <span class="ml-1 text-slate-400">{{ r.medicine?.unit || (safeParse(r.note)?.unit || '') }}</span>
             </td>
             <td class="py-2 pr-3">{{ r.category }}</td>
             <td class="py-2 pr-3">

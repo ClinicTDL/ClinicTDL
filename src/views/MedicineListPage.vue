@@ -18,6 +18,16 @@ try {
 const isAdmin = computed(() => session?.status === 'admin')
 
 const loading = ref(false)
+
+const safeParse = (str) => {
+  if (!str) return {}
+  try {
+    return JSON.parse(str)
+  } catch (e) {
+    return {}
+  }
+}
+
 const medicines = ref([])
 const search = ref('')
 const unitFilter = ref('')
@@ -184,14 +194,12 @@ const loadPendingImports = async () => {
     // Parse temporary info from 'note' if it's a new item
     pendingImports.value = (data || []).map(item => {
       if (!item.medicine_id && item.note) {
-        try {
-          const tempInfo = JSON.parse(item.note)
+        const tempInfo = safeParse(item.note)
+        if (tempInfo.name) {
           return {
             ...item,
             tempInfo
           }
-        } catch (e) {
-          return item
         }
       }
       return item
@@ -514,14 +522,16 @@ onMounted(loadMedicines)
               <tr v-for="item in pendingImports" :key="item.id">
                 <td class="py-3 text-slate-600 dark:text-slate-300 text-[12px]">{{ new Date(item.created_at).toLocaleString('th-TH') }}</td>
                 <td class="py-3">
-                  <div class="font-medium text-slate-900 dark:text-slate-300 text-[12px]">
-                    {{ item.medicine?.name || item.tempInfo?.name || 'Unknown' }}
+                  <div class="font-medium text-slate-900 dark:text-white">
+                    {{ item.medicine?.name || (safeParse(item.note)?.name || '-') }}
                   </div>
-                  <div class="text-[12px] text-slate-400">{{ item.medicine?.sku || item.tempInfo?.sku || '-' }}</div>
+                  <div class="text-[10px] text-slate-400">
+                    {{ item.medicine?.sku || (safeParse(item.note)?.sku || '-') }}
+                  </div>
                 </td>
-                <td class="py-3">
-                  <span class="font-bold text-green-600 dark:text-green-400 text-[12px]">+{{ item.quantity }}</span>
-                  <span class="ml-1 text-slate-400 text-[12px]">{{ item.medicine?.unit || item.tempInfo?.unit }}</span>
+                <td class="py-3 text-center">
+                  <span class="font-bold text-clinic-blue">+{{ item.quantity }}</span>
+                  <span class="ml-1 text-slate-400">{{ item.medicine?.unit || (safeParse(item.note)?.unit || '') }}</span>
                 </td>
                 <td class="py-3">
                   <span :class="item.medicine_id ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400'" class="px-2 py-0.5 rounded-full text-[12px]">
