@@ -56,11 +56,11 @@ const drawValuesPlugin = {
 
 const loading = ref(true)
 const summary = ref({
-  patientsThisMonth: { value: 0, change: 0 },
+  patientsThisMonth: { value: 0, prev: 0, change: 0 },
   totalStock: { value: 0, change: 0 },
-  topDepartment: { name: '-', value: 0, change: 0, percentOfTotal: 0 },
-  topDiagnosis: { name: '-', value: 0, change: 0, percentOfTotal: 0 },
-  dispensedThisMonth: { value: 0, change: 0 },
+  topDepartment: { name: '-', value: 0, prev: 0, change: 0, percentOfTotal: 0 },
+  topDiagnosis: { name: '-', value: 0, prev: 0, change: 0, percentOfTotal: 0 },
+  dispensedThisMonth: { value: 0, prev: 0, change: 0 },
 })
 
 const kpiLabels = ref([])
@@ -92,6 +92,17 @@ const leavePageIndex = ref(0)
 const dateRange = ref('this-month') // this-month, last-month, this-week, last-week, custom
 const customStartDate = ref('')
 const customEndDate = ref('')
+const dateRangeLabel = ref('เดือนนี้')
+watch(dateRange, (newVal) => {
+  const presets = {
+    'this-month': 'เดือนนี้',
+    'last-month': 'เดือนก่อน',
+    'this-week': 'อาทิตย์นี้',
+    'last-week': 'อาทิตย์ก่อน',
+    'custom': 'กำหนดเอง'
+  }
+  dateRangeLabel.value = presets[newVal] || 'ช่วงที่เลือก'
+})
 
 const chartData = ref({
   labels: [],
@@ -217,7 +228,10 @@ watch(departmentStats, () => {
 })
 
 const computeChangePercent = (current, previous) => {
-  if (!previous) return 0
+  if (!previous) {
+    return current > 0 ? 100 : 0
+  }
+  if (current === previous) return 0
   return ((current - previous) / previous) * 100
 }
 
@@ -367,11 +381,11 @@ const loadDashboardData = async () => {
     const topDiagPercent = patientsRange.length ? (topDiagVal / patientsRange.length) * 100 : 0
 
     summary.value = {
-      patientsThisMonth: { value: patientsRange.length, change: computeChangePercent(patientsRange.length, patientsPrev.length) },
+      patientsThisMonth: { value: patientsRange.length, prev: patientsPrev.length, change: computeChangePercent(patientsRange.length, patientsPrev.length) },
       totalStock: { value: totalStockRows.reduce((sum, r) => sum + (r.current_stock || 0), 0), change: 0 },
-      topDepartment: { name: topDeptName, value: topDeptVal, change: computeChangePercent(topDeptVal, topDeptPrevVal), percentOfTotal: topDeptPercent },
-      topDiagnosis: { name: topDiagName, value: topDiagVal, change: computeChangePercent(topDiagVal, topDiagPrevVal), percentOfTotal: topDiagPercent },
-      dispensedThisMonth: { value: dispensedRangeValue, change: computeChangePercent(dispensedRangeValue, dispensedPrevValue) },
+      topDepartment: { name: topDeptName, value: topDeptVal, prev: topDeptPrevVal, change: computeChangePercent(topDeptVal, topDeptPrevVal), percentOfTotal: topDeptPercent },
+      topDiagnosis: { name: topDiagName, value: topDiagVal, prev: topDiagPrevVal, change: computeChangePercent(topDiagVal, topDiagPrevVal), percentOfTotal: topDiagPercent },
+      dispensedThisMonth: { value: dispensedRangeValue, prev: dispensedPrevValue, change: computeChangePercent(dispensedRangeValue, dispensedPrevValue) },
     }
     prevDispensed.value = dispensedPrevValue
 
@@ -587,11 +601,12 @@ const exportDashboardPdf = async () => {
       const minutes = String(date.getMinutes()).padStart(2, '0')
       return `${day} ${monthName} ${year} ${hours}:${minutes}`
     }
-    const diffText = (val, prev) => {
-      const diff = val - prev
-      const pct = prev ? ((diff / prev) * 100).toFixed(1) : '0.0'
-      const dir = diff >= 0 ? 'เพิ่มขึ้น' : 'ลดลง'
-      return `${dir} ${Math.abs(diff)} (${pct}%)`
+
+    const getKpiBadge = (change) => {
+      const absChange = Math.abs(change).toFixed(1)
+      if (change > 0) return `<span class="text-red font-bold">▲ ${absChange}%</span>`
+      if (change < 0) return `<span class="text-green font-bold">▼ ${absChange}%</span>`
+      return `<span class="muted">0.0%</span>`
     }
 
     const w = window.open('', '_blank')
@@ -600,103 +615,109 @@ const exportDashboardPdf = async () => {
 <html lang="th">
   <head>
     <meta charset="utf-8" />
-    <title>รายงานแดชบอร์ดคลินิก TDL</title>
+    <title>รายงานแดชบอร์ดคลินิก TDL (${dateRangeLabel.value})</title>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap');
       @page { size: A4; margin: 12mm; }
-      body { font-family: 'Sarabun', 'SF Thonburi', sans-serif; color: #0f172a; -webkit-print-color-adjust: exact; }
+      body { font-family: 'Sarabun', 'SF Thonburi', sans-serif; color: #0f172a; -webkit-print-color-adjust: exact; line-height: 1.4; }
       h1 { font-size: 22px; margin: 0 0 4px; color: #1e3a8a; }
-      h2 { font-size: 16px; margin: 16px 0 8px; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px; }
-      .muted { color: #64748b; font-size: 12px; }
-      .section { margin-bottom: 16px; page-break-inside: avoid; }
-      .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-      .card { border: 1px solid #cbd5e1; padding: 10px; border-radius: 8px; background: #f8fafc; }
-      .card-title { font-size: 12px; color: #64748b; margin-bottom: 4px; }
-      .card-val { font-size: 24px; font-weight: bold; color: #0f172a; }
-      .card-diff { font-size: 11px; }
-      .text-green { color: #10b981; }
-      .text-red { color: #ef4444; }
+      h2 { font-size: 16px; margin: 16px 0 8px; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px; color: #334155; }
+      .muted { color: #64748b; font-size: 11px; }
+      .section { margin-bottom: 20px; page-break-inside: avoid; }
+      .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+      .card { border: 1px solid #e2e8f0; padding: 12px 8px; border-radius: 12px; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+      .card-title { font-size: 10px; font-weight: 600; color: #64748b; margin-bottom: 4px; text-transform: uppercase; }
+      .card-val { font-size: 20px; font-weight: 800; color: #0f172a; margin: 2px 0; }
+      .card-diff { font-size: 10px; margin-top: 4px; }
+      .text-green { color: #059669; }
+      .text-red { color: #dc2626; }
+      .text-blue { color: #2563eb; }
       
-      table { width: 100%; border-collapse: collapse; font-size: 12px; }
-      th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
-      th { background: #f1f5f9; font-weight: 600; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 5px; }
+      th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+      th { background: #f8fafc; font-weight: 600; color: #475569; }
       .text-right { text-align: right; }
       
-      .chart-container { width: 100%; text-align: center; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-top: 8px; }
-      img { max-width: 100%; height: auto; max-height: 300px; }
+      .chart-container { width: 100%; text-align: center; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; background: #ffffff; }
+      img { max-width: 100%; height: auto; max-height: 280px; }
+      .flex-2 { display: flex; gap: 15px; }
+      .col { flex: 1; }
     </style>
   </head>
   <body>
-    <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom: 3px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 20px;">
       <div>
-        <h1>รายงานแดชบอร์ดคลินิก TDL</h1>
-        <div class="muted">พิมพ์เมื่อ: ${fmt(now)}</div>
+        <div style="color: #1e3a8a; font-weight: 800; font-size: 24px;">CLINIC TDL</div>
+        <h1 style="margin:0;">รายงานสรุปแดชบอร์ด</h1>
+        <div class="muted">ช่วงเวลา: <strong>${dateRangeLabel.value}</strong> | พิมพ์เมื่อ: ${fmt(now)}</div>
       </div>
-      <div style="text-align:right; font-size:12px;">
-        <div>เดือนปัจจุบัน: ${thaiMonthsLong[now.getMonth()] || ''} ${now.getFullYear()}</div>
+      <div style="text-align:right;">
+        <div style="font-size: 14px; font-weight: 600;">สรุปผลการดำเนินงาน</div>
+        <div class="muted">${thaiMonthsLong[now.getMonth()]} ${now.getFullYear() + 543}</div>
       </div>
     </div>
 
     <div class="section">
-      <h2>ภาพรวม (KPI Overview)</h2>
-      <div class="grid-4">
+      <div class="grid-5">
         <div class="card">
-          <div class="card-title">ผู้ป่วยเดือนนี้</div>
+          <div class="card-title">ผู้ป่วย (คน)</div>
           <div class="card-val">${summary.value.patientsThisMonth.value}</div>
-          <div class="card-diff ${summary.value.patientsThisMonth.change >= 0 ? 'text-red' : 'text-green'}">
-            ${diffText(summary.value.patientsThisMonth.value, summary.value.patientsThisMonth.value / (1 + summary.value.patientsThisMonth.change/100))} เทียบเดือนก่อน
+          <div class="card-diff">
+            ${getKpiBadge(summary.value.patientsThisMonth.change)}
           </div>
         </div>
         <div class="card">
           <div class="card-title">สต็อกยารวม</div>
           <div class="card-val">${summary.value.totalStock.value}</div>
-          <div class="card-diff muted">หน่วย</div>
+          <div class="card-diff muted">รายการคงเหลือรวม</div>
         </div>
         <div class="card">
           <div class="card-title">แผนกสูงสุด</div>
-          <div class="card-val">${summary.value.topDepartment.name}</div>
-          <div class="card-diff ${summary.value.topDepartment.change >= 0 ? 'text-red' : 'text-green'}">
-             ${diffText(summary.value.topDepartment.value, summary.value.topDepartment.value / (1 + summary.value.topDepartment.change/100))} (${summary.value.topDepartment.percentOfTotal.toFixed(1)}%)
+          <div class="card-val" style="font-size: 14px; height: 24px; overflow: hidden;">${summary.value.topDepartment.name}</div>
+          <div class="card-diff">
+             <span class="text-blue font-bold">${summary.value.topDepartment.value} ราย</span>
+             ${getKpiBadge(summary.value.topDepartment.change)}
           </div>
         </div>
         <div class="card">
           <div class="card-title">โรคที่พบบ่อย</div>
-          <div class="card-val">${summary.value.topDiagnosis.name}</div>
-          <div class="card-diff ${summary.value.topDiagnosis.change >= 0 ? 'text-red' : 'text-green'}">
-             ${diffText(summary.value.topDiagnosis.value, summary.value.topDiagnosis.value / (1 + summary.value.topDiagnosis.change/100))} (${summary.value.topDiagnosis.percentOfTotal.toFixed(1)}%)
+          <div class="card-val" style="font-size: 14px; height: 24px; overflow: hidden;">${summary.value.topDiagnosis.name}</div>
+          <div class="card-diff">
+             <span class="text-blue font-bold">${summary.value.topDiagnosis.value} ราย</span>
+             ${getKpiBadge(summary.value.topDiagnosis.change)}
           </div>
         </div>
         <div class="card">
-          <div class="card-title">จ่ายยาเดือนนี้</div>
+          <div class="card-title">จ่ายยา (หน่วย)</div>
           <div class="card-val">${summary.value.dispensedThisMonth.value}</div>
-          <div class="card-diff ${summary.value.dispensedThisMonth.change >= 0 ? 'text-red' : 'text-green'}">
-             ${diffText(summary.value.dispensedThisMonth.value, prevDispensed.value)}
+          <div class="card-diff">
+             ${getKpiBadge(summary.value.dispensedThisMonth.change)}
           </div>
         </div>
       </div>
     </div>
 
     <div class="section">
-      <div style="display: flex; gap: 16px;">
-        <div style="flex: 1;">
-          <h2>สถิติรายแผนก (Top Departments)</h2>
+      <div class="flex-2">
+        <div class="col">
+          <h2>สถิติรายแผนก (Departments)</h2>
           <table>
             <thead>
               <tr>
                 <th>แผนก</th>
-                <th class="text-right">ผู้ป่วย (คน)</th>
-                <th class="text-right">ใช้ยา (หน่วย)</th>
-                <th class="text-right">KPI</th>
+                <th class="text-right">ผู้ป่วย</th>
+                <th class="text-right">ใช้ยา</th>
+                <th class="text-right">KPI (%)</th>
               </tr>
             </thead>
             <tbody>
-              ${departmentStats.value.slice(0, 10).map(d => `
+              ${departmentStats.value.slice(0, 8).map(d => `
                 <tr>
                   <td>${d.department}</td>
                   <td class="text-right">${d.patientCount}</td>
                   <td class="text-right">${d.medicineCount}</td>
-                  <td class="text-right ${d.change > 0 ? 'text-red' : d.change < 0 ? 'text-green' : ''}">
-                    ${d.change > 0 ? '+' : ''}${d.change.toFixed(1)}%
+                  <td class="text-right">
+                    ${getKpiBadge(d.change)}
                   </td>
                 </tr>
               `).join('')}
@@ -704,9 +725,9 @@ const exportDashboardPdf = async () => {
             </tbody>
           </table>
         </div>
-        <div style="flex: 1;">
+        <div class="col">
            <div class="chart-container">
-             <div class="muted" style="margin-bottom:4px">เปรียบเทียบ KPI รายแผนก</div>
+             <div class="muted" style="margin-bottom:8px; font-weight: 600;">กราฟเปรียบเทียบรายแผนก</div>
              ${barCanvasImage.value ? `<img src="${barCanvasImage.value}" />` : '<div class="muted">ไม่มีกราฟ</div>'}
            </div>
         </div>
@@ -714,14 +735,14 @@ const exportDashboardPdf = async () => {
     </div>
 
     <div class="section">
-      <h2>รายการยาที่ใช้มากที่สุด (Top Medicines)</h2>
+      <h2>รายการยาที่ใช้มากที่สุด (Top 10 Medicines)</h2>
       <table>
         <thead>
           <tr>
             <th>รายการยา</th>
             <th>อาการที่พบบ่อย</th>
             <th class="text-right">จำนวนที่จ่าย</th>
-            <th class="text-right">KPI</th>
+            <th class="text-right">KPI (%)</th>
           </tr>
         </thead>
         <tbody>
@@ -730,8 +751,8 @@ const exportDashboardPdf = async () => {
               <td>${m.name}</td>
               <td>${m.diagnosis}</td>
               <td class="text-right">${m.dispensedCount}</td>
-              <td class="text-right ${m.change > 0 ? 'text-red' : m.change < 0 ? 'text-green' : ''}">
-                ${m.change > 0 ? '+' : ''}${m.change.toFixed(1)}%
+              <td class="text-right">
+                ${getKpiBadge(m.change)}
               </td>
             </tr>
           `).join('')}
@@ -740,34 +761,35 @@ const exportDashboardPdf = async () => {
       </table>
     </div>
 
-    <div class="section">
-      <h2>แนวโน้ม 15 วันล่าสุด</h2>
+    <div class="section" style="page-break-before: always;">
+      <h2>แนวโน้มการเข้ารับบริการ (Trends)</h2>
       <div class="chart-container">
+        <div class="muted" style="margin-bottom:8px; font-weight: 600;">สถิติผู้ป่วยและการใช้ยา ย้อนหลัง</div>
         ${lineCanvasImage.value ? `<img src="${lineCanvasImage.value}" />` : '<div class="muted">ไม่มีกราฟ</div>'}
       </div>
     </div>
 
     <div class="section">
-      <div style="display: flex; gap: 16px;">
-        <div style="flex: 1;">
+      <div class="flex-2">
+        <div class="col">
           <h2>โรคที่พบบ่อย (Top Diagnosis)</h2>
           <table>
-            <thead><tr><th>ชื่อโรค</th><th class="text-right">จำนวนครั้ง</th><th class="text-right">KPI</th></tr></thead>
+            <thead><tr><th>ชื่อโรค</th><th class="text-right">จำนวนครั้ง</th><th class="text-right">KPI (%)</th></tr></thead>
             <tbody>
               ${topDiagnoses.value.map(r => `
                 <tr>
                   <td>${r.diagnosis}</td>
                   <td class="text-right">${r.count}</td>
-                  <td class="text-right ${r.change > 0 ? 'text-red' : r.change < 0 ? 'text-green' : ''}">
-                    ${r.change > 0 ? '+' : ''}${r.change.toFixed(1)}%
+                  <td class="text-right">
+                    ${getKpiBadge(r.change)}
                   </td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         </div>
-        <div style="flex: 1;">
-           <h2>ผู้ป่วยล่าสุด (วันนี้)</h2>
+        <div class="col">
+           <h2>ผู้ป่วยล่าสุด</h2>
            <table>
              <thead><tr><th>เวลา</th><th>ชื่อ-สกุล</th><th>แผนก</th></tr></thead>
              <tbody>
@@ -784,6 +806,9 @@ const exportDashboardPdf = async () => {
       </div>
     </div>
 
+    <div style="margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 10px; text-align: center;" class="muted">
+      รายงานนี้สร้างขึ้นโดยอัตโนมัติจากระบบ Clinic TDL Dashboard
+    </div>
   </body>
 </html>
     `
@@ -861,7 +886,7 @@ const exportDashboardPdf = async () => {
       <!-- Patients -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium text-nowrap">ผู้ป่วย (รวม)</span>
+          <span class="text-xs text-slate-500 font-medium text-nowrap">ผู้ป่วย ({{ dateRangeLabel }})</span>
           <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
             <i class="fa-solid fa-user-injured text-clinic-blue dark:text-blue-400 text-sm"></i>
           </div>
@@ -871,9 +896,9 @@ const exportDashboardPdf = async () => {
         </div>
         <div
           class="text-xs font-medium flex items-center gap-1"
-          :class="summary.patientsThisMonth.change > 0 ? 'text-red-500' : 'text-emerald-500'"
+          :class="summary.patientsThisMonth.change > 0 ? 'text-red-500' : summary.patientsThisMonth.change < 0 ? 'text-emerald-500' : 'text-slate-400'"
         >
-          <i :class="summary.patientsThisMonth.change > 0 ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-trend-down'"></i>
+          <i v-if="summary.patientsThisMonth.change !== 0" :class="summary.patientsThisMonth.change > 0 ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-trend-down'"></i>
           {{ Math.abs(summary.patientsThisMonth.change).toFixed(1) }}% เทียบช่วงก่อนหน้า
         </div>
       </div>
@@ -909,9 +934,9 @@ const exportDashboardPdf = async () => {
           <div class="text-xl font-bold text-emerald-600">{{ summary.topDepartment.value }}</div>
           <div
             class="text-[10px] font-medium flex items-center gap-0.5"
-            :class="summary.topDepartment.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
+            :class="summary.topDepartment.change > 0 ? 'text-red-500' : summary.topDepartment.change < 0 ? 'text-emerald-500' : 'text-slate-400'"
           >
-            <i :class="summary.topDepartment.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+            <i v-if="summary.topDepartment.change !== 0" :class="summary.topDepartment.change > 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
             {{ Math.abs(summary.topDepartment.change).toFixed(1) }}%
           </div>
         </div>
@@ -935,9 +960,9 @@ const exportDashboardPdf = async () => {
           <div class="text-xl font-bold text-rose-600">{{ summary.topDiagnosis.value }}</div>
           <div
             class="text-[10px] font-medium flex items-center gap-0.5"
-            :class="summary.topDiagnosis.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
+            :class="summary.topDiagnosis.change > 0 ? 'text-red-500' : summary.topDiagnosis.change < 0 ? 'text-emerald-500' : 'text-slate-400'"
           >
-            <i :class="summary.topDiagnosis.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+            <i v-if="summary.topDiagnosis.change !== 0" :class="summary.topDiagnosis.change > 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
             {{ Math.abs(summary.topDiagnosis.change).toFixed(1) }}%
           </div>
         </div>
@@ -949,7 +974,7 @@ const exportDashboardPdf = async () => {
       <!-- Dispensed -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-slate-500 font-medium text-nowrap">ยาที่จ่ายไป</span>
+          <span class="text-xs text-slate-500 font-medium text-nowrap">ยาที่จ่าย ({{ dateRangeLabel }})</span>
           <div class="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
             <i class="fa-solid fa-prescription-bottle-medical text-orange-600 dark:text-orange-400 text-sm"></i>
           </div>
@@ -959,9 +984,9 @@ const exportDashboardPdf = async () => {
         </div>
         <div
           class="text-xs font-medium flex items-center gap-1"
-          :class="summary.dispensedThisMonth.change >= 0 ? 'text-red-500' : 'text-emerald-500'"
+          :class="summary.dispensedThisMonth.change > 0 ? 'text-red-500' : summary.dispensedThisMonth.change < 0 ? 'text-emerald-500' : 'text-slate-400'"
         >
-          <i :class="summary.dispensedThisMonth.change >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+          <i v-if="summary.dispensedThisMonth.change !== 0" :class="summary.dispensedThisMonth.change > 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
           {{ Math.abs(summary.dispensedThisMonth.change).toFixed(1) }}% เทียบช่วงก่อนหน้า
         </div>
       </div>
