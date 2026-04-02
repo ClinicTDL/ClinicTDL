@@ -69,231 +69,577 @@ const drawExportCanvas = async () => {
   const canvas = exportCanvasRef.value
   if (!canvas || !exportData.value) return
   await ensureCanvasFont()
+
+  try {
+    const faUrl = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/webfonts/fa-solid-900.woff2'
+    const fa = new FontFace('FontAwesome', `url(${faUrl}) format('woff2')`)
+    await fa.load()
+    document.fonts.add(fa)
+  } catch {}
+
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
-  const width = 1280
-  const height = 1000
-  canvas.width = width * dpr
-  canvas.height = height * dpr
-  canvas.style.width = width + 'px'
-  canvas.style.height = height + 'px'
+
+  // ── Canvas dimensions: กว้างพอดี ลดความสูง ──
+  const W = 1280
+  const H = 780
+  canvas.width = W * dpr
+  canvas.height = H * dpr
+  canvas.style.width = W + 'px'
+  canvas.style.height = H + 'px'
   const ctx = canvas.getContext('2d')
   ctx.scale(dpr, dpr)
 
   const isDark = document.documentElement.classList.contains('dark')
-  const colorBg = isDark ? '#1e293b' : '#f1f5f9' // slate-800 : slate-100
-  const colorText = isDark ? '#f1f5f9' : '#1e293b' // slate-100 : slate-800
-  const labelColor = isDark ? '#94a3b8' : '#64748b' // slate-400 : slate-500
-  const borderColor = isDark ? '#334155' : '#cbd5e1' // slate-700 : slate-300
-  const subtle = isDark ? '#0f172a' : '#ffffff' // slate-900 : white
-  const panel = isDark ? '#1e293b' : '#f8fafc' // slate-800 : slate-50
-  const rowAlt = isDark ? '#334155' : '#e2e8f0' // slate-700 : slate-200
 
-  // Background
-  ctx.fillStyle = colorBg
-  ctx.fillRect(0, 0, width, height)
+  const c = isDark ? {
+    bg:          '#0a0f1e',
+    surface:     '#111827',
+    surfaceAlt:  '#1a2235',
+    border:      '#1e3a5f',
+    accent:      '#3b82f6',
+    accentSoft:  '#172554',
+    text:        '#f0f6ff',
+    textMuted:   '#7d8fa8',
+    textDim:     '#2d3f55',
+    successBg:   'rgba(16,185,129,0.12)',
+    successText: '#34d399',
+    dangerBg:    'rgba(239,68,68,0.12)',
+    dangerText:  '#f87171',
+    rowOdd:      'rgba(59,130,246,0.05)',
+    pill:        '#172554',
+    pillText:    '#93c5fd',
+  } : {
+    bg:          '#edf1f7',
+    surface:     '#ffffff',
+    surfaceAlt:  '#f4f7fc',
+    border:      '#ccd8ec',
+    accent:      '#2563eb',
+    accentSoft:  '#dbeafe',
+    text:        '#0f172a',
+    textMuted:   '#64748b',
+    textDim:     '#b0bdd0',
+    successBg:   '#ecfdf5',
+    successText: '#059669',
+    dangerBg:    '#fef2f2',
+    dangerText:  '#dc2626',
+    rowOdd:      '#f0f7ff',
+    pill:        '#dbeafe',
+    pillText:    '#1d4ed8',
+  }
 
-  // Header right info
-  ctx.fillStyle = colorText
-  ctx.font = '600 16px "SF Thonburi","Noto Sans Thai", Arial'
-  const loc = exportData.value?.clinic_location || '-'
-  const dt = new Date(exportData.value?.created_at || Date.now()).toLocaleString('en-UK')
+  // ════════════════════════════════
+  // BACKGROUND
+  // ════════════════════════════════
+  ctx.fillStyle = c.bg
+  ctx.fillRect(0, 0, W, H)
+
+  // Dot grid
+  ctx.fillStyle = isDark ? 'rgba(59,130,246,0.06)' : 'rgba(37,99,235,0.045)'
+  for (let x = 24; x < W; x += 36) {
+    for (let y = 24; y < H; y += 36) {
+      ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill()
+    }
+  }
+
+  // Corner glow blobs
+  const blob1 = ctx.createRadialGradient(0, 0, 0, 0, 0, 260)
+  blob1.addColorStop(0, isDark ? 'rgba(59,130,246,0.15)' : 'rgba(37,99,235,0.09)')
+  blob1.addColorStop(1, 'transparent')
+  ctx.fillStyle = blob1; ctx.fillRect(0, 0, 260, 260)
+
+  const blob2 = ctx.createRadialGradient(W, H, 0, W, H, 240)
+  blob2.addColorStop(0, isDark ? 'rgba(124,58,237,0.12)' : 'rgba(124,58,237,0.07)')
+  blob2.addColorStop(1, 'transparent')
+  ctx.fillStyle = blob2; ctx.fillRect(W - 240, H - 240, 240, 240)
+
+  // ════════════════════════════════
+  // HEADER BAR
+  // ════════════════════════════════
+  const HEAD_H = 68
+  const hGrad = ctx.createLinearGradient(0, 0, W, 0)
+  hGrad.addColorStop(0,   '#1e3a8a')
+  hGrad.addColorStop(0.4, '#2563eb')
+  hGrad.addColorStop(0.75,'#4f46e5')
+  hGrad.addColorStop(1,   '#7c3aed')
+  ctx.fillStyle = hGrad
+  ctx.fillRect(0, 0, W, HEAD_H)
+  ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(0, 0, W, 1)
+
+  // Logo circle
+  ctx.fillStyle = 'rgba(255,255,255,0.18)'
+  ctx.beginPath(); ctx.arc(38, HEAD_H / 2, 23, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = 'rgba(255,255,255,0.92)'
+  _faIcon(ctx, '\uf0f8', 38, HEAD_H / 2 + 7, 19)
+
+  // Title
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '700 22px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.textAlign = 'left'
+  ctx.fillText('Medical Record', 72, HEAD_H / 2 - 4)
+  ctx.fillStyle = 'rgba(255,255,255,0.6)'
+  ctx.font = '400 13px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.fillText('ระบบบันทึกการรักษาของ TDL CLinic', 72, HEAD_H / 2 + 15)
+
+  // Right meta — ขนาดใหญ่ขึ้น อ่านง่ายขึ้น
+  const p   = exportData.value
+  const emp = p?.employees || {}
+  const loc = p?.clinic_location || '-'
+  const dtStr = new Date(p?.created_at || Date.now()).toLocaleString('th-TH', { dateStyle: 'long', timeStyle: 'short' })
+  const dr     = p?.creator?.full_name || '-'
+  const drCode = p?.creator?.emp_code ? ` (${p.creator.emp_code})` : ''
+
   ctx.textAlign = 'right'
-  ctx.fillText(`ที่: ${loc} / ${dt}`, width - 40, 40)
-  
-  const dr = exportData.value?.creator?.full_name || '-'
-  const drCode = exportData.value?.creator?.emp_code ? ` (${exportData.value.creator.emp_code})` : ''
-  ctx.fillText(`โดยแพทย์: ${dr}${drCode}`, width - 40, 68)
+  ctx.fillStyle = 'rgba(255,255,255,0.8)'
+  ctx.font = '400 13px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.fillText(`สถานที่: ${loc}`, W - 22, HEAD_H / 2 - 12)
+  ctx.fillStyle = 'rgba(255,255,255,0.92)'
+  ctx.font = '500 15px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.fillText(dtStr, W - 22, HEAD_H / 2 + 8)
+  ctx.fillStyle = '#bfdbfe'
+  ctx.font = '600 14px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.fillText(`ผู้ตรวจ: ${dr}${drCode}`, W - 22, HEAD_H / 2 + 28)
   ctx.textAlign = 'left'
 
-  // Left card (profile)
-  const leftX = 40
-  const leftY = 90
-  const leftW = 320
-  const leftH = height - leftY - 40
-  // Card
-  ctx.fillStyle = subtle
-  roundRect(ctx, leftX, leftY, leftW, leftH, 20).fill()
-  
-  // Photo circle
-  const imgSize = 160
-  const imgX = leftX + (leftW - imgSize) / 2
-  const imgY = leftY + 35
-  const imgUrl = exportData.value?.image_url || ''
-  await drawCircleImage(ctx, imgUrl, imgX, imgY, imgSize, imgSize, isDark)
-  
-  // Texts
-  const emp = exportData.value?.employees || {}
-  let ty = imgY + imgSize + 50
-  ctx.fillStyle = colorText
-  ctx.font = '700 18px "SF Thonburi","Noto Sans Thai", Arial'
+  // ════════════════════════════════
+  // LAYOUT
+  // ════════════════════════════════
+  const PAD    = 14
+  const bodyY  = HEAD_H + PAD
+  const bodyH  = H - HEAD_H - PAD * 2
+  const LEFT_W = 252
+  const leftX  = PAD
+  const rightX = leftX + LEFT_W + PAD
+  const RIGHT_W = W - rightX - PAD
+
+  // ════════════════════════════════
+  // LEFT — PROFILE CARD
+  // ════════════════════════════════
+  _card(ctx, leftX, bodyY, LEFT_W, bodyH, c.surface, c.border, 16, isDark)
+
+  // Top gradient band
+  const pGrad = ctx.createLinearGradient(leftX, bodyY, leftX + LEFT_W, bodyY + 130)
+  pGrad.addColorStop(0, '#1e3a8a')
+  pGrad.addColorStop(1, '#4f46e5')
+  ctx.fillStyle = pGrad
+  _roundRect(ctx, leftX, bodyY, LEFT_W, 130, 16, true); ctx.fill()
+
+  // Decorative circles
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'
+  ctx.beginPath(); ctx.arc(leftX + LEFT_W + 10, bodyY + 18, 60, 0, Math.PI * 2); ctx.fill()
+  ctx.beginPath(); ctx.arc(leftX - 10, bodyY + 100, 45, 0, Math.PI * 2); ctx.fill()
+
+  ctx.fillStyle = 'rgba(255,255,255,0.7)'
+  ctx.font = '500 12px "SF Thonburi","Noto Sans Thai",Arial'
   ctx.textAlign = 'center'
-  ctx.fillText('ข้อมูลคนไข้มารับการรักษา', leftX + leftW / 2, leftY + 28)
+  ctx.fillText('ข้อมูลผู้ป่วย', leftX + LEFT_W / 2, bodyY + 22)
 
-  ctx.font = '400 14px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = labelColor
-  ctx.fillText('ชื่อ-สกุล', leftX + leftW / 2, ty); ty += 30
-  ctx.font = '700 22px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = colorText
-  ctx.fillText(emp.fullname || '-', leftX + leftW / 2, ty); ty += 45
+  // Avatar — ขนาดใหญ่ขึ้น
+  const AV_R  = 54
+  const AV_CX = leftX + LEFT_W / 2
+  const AV_CY = bodyY + 130
+  await _drawAvatar(ctx, p?.image_url || '', AV_CX, AV_CY, AV_R, c, isDark)
 
-  ctx.font = '400 14px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = labelColor
-  ctx.fillText('รหัสพนักงาน', leftX + leftW / 2, ty); ty += 30
-  ctx.font = '700 22px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = colorText
-  ctx.fillText((emp.employee_code || '-'), leftX + leftW / 2, ty); ty += 55
+  // Profile fields
+  const profFields = [
+    { label: 'ชื่อ-สกุล',        value: emp.fullname || '-',     icon: '\uf007', bold: true  },
+    { label: 'รหัสพนักงาน',      value: emp.employee_code || '-', icon: '\uf2bb', bold: true  },
+    { label: 'ตำแหน่ง',          value: emp.position || '-',      icon: '\uf0b1', bold: false },
+    { label: 'หน่วยงาน',         value: emp.department || '-',    icon: '\uf1ad', bold: false },
+    { label: 'บริษัท / โครงการ', value: (emp.company || '-') + (emp.project ? ` (${emp.project})` : ''), icon: '\uf279', bold: false },
+  ]
 
-  ctx.font = '400 14px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = labelColor
-  ctx.fillText('ตำแหน่ง', leftX + leftW / 2, ty); ty += 30
-  ctx.font = '500 16px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = colorText
-  wrapCenterText(ctx, emp.position || '-', leftX, leftW, ty, 22); ty += 45
+  let py = AV_CY + AV_R + 20
+  for (const f of profFields) {
+    // Divider
+    if (py > AV_CY + AV_R + 20) {
+      ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(37,99,235,0.09)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(leftX + 16, py - 5)
+      ctx.lineTo(leftX + LEFT_W - 16, py - 5)
+      ctx.stroke()
+    }
 
-  ctx.font = '400 14px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = labelColor
-  ctx.fillText('หน่วยงาน', leftX + leftW / 2, ty); ty += 30
-  ctx.font = '500 16px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = colorText
-  wrapCenterText(ctx, emp.department || '-', leftX, leftW, ty, 22); ty += 45
+    // Icon circle
+    ctx.fillStyle = isDark ? c.accentSoft : '#eff6ff'
+    ctx.beginPath(); ctx.arc(leftX + 28, py + 9, 13, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = c.accent
+    _faIcon(ctx, f.icon, leftX + 28, py + 14, 12)
 
-  ctx.font = '400 14px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = labelColor
-  ctx.fillText('บริษัท / โครงการ', leftX + leftW / 2, ty); ty += 30
-  ctx.font = '500 16px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = colorText
-  wrapCenterText(ctx, (emp.company || '-') + (emp.project ? ` (${emp.project})` : ''), leftX, leftW, ty, 22)
+    // Label
+    ctx.fillStyle = c.textMuted
+    ctx.font = '400 11px "SF Thonburi","Noto Sans Thai",Arial'
+    ctx.textAlign = 'left'
+    ctx.fillText(f.label, leftX + 47, py + 5)
+
+    // Value — ขนาดฟอนต์ unified สม่ำเสมอ
+    ctx.fillStyle = c.text
+    ctx.font = `${f.bold ? '700' : '500'} 13px "SF Thonburi","Noto Sans Thai",Arial`
+    let val = String(f.value)
+    const maxW = LEFT_W - 60
+    while (ctx.measureText(val).width > maxW && val.length > 4) val = val.slice(0, -4) + '…'
+    ctx.fillText(val, leftX + 47, py + 21)
+    py += 38
+  }
   ctx.textAlign = 'left'
 
-  // Divider between panels
-  ctx.strokeStyle = isDark ? '#334155' : '#cbd5e1'
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.moveTo(leftX + leftW + 20, leftY + 30)
-  ctx.lineTo(leftX + leftW + 20, leftY + leftH - 30)
-  ctx.stroke()
+  // ════════════════════════════════
+  // RIGHT COLUMN
+  // ════════════════════════════════
+  let ry  = bodyY
+  const GAP = 10
 
-  // Right card (exam + dispensing)
-  const rightX = leftX + leftW + 60
-  const rightY = leftY
-  const rightW = width - rightX - 40
-  const rightH = leftH
-  ctx.fillStyle = subtle
-  roundRect(ctx, rightX, rightY, rightW, rightH, 20).fill()
+  // ── VITALS ──────────────────────
+  const VH = 96
+  _card(ctx, rightX, ry, RIGHT_W, VH, c.surface, c.border, 14, isDark)
 
-  const p = exportData.value
-  let rx = rightX + 40
-  let ry = rightY + 50
-  ctx.fillStyle = colorText
-  ctx.font = '700 22px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillText('ข้อมูลการตรวจ/จ่ายยา', rx, ry)
-  ry += 70
+  // Section title
+  ctx.fillStyle = c.accent
+  _faIcon(ctx, '\uf21e', rightX + 18, ry + 22, 14)
+  ctx.fillStyle = c.text
+  ctx.font = '700 15px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.fillText('สัญญาณชีพ (Vital Signs)', rightX + 38, ry + 22)
 
-  // Vital fields boxes
-  const fields = [
-    ['BP:', p?.bp || '-'],
-    ['Pulse:', p?.pulse != null ? String(p.pulse) : '-'],
-    ['RR:', p?.rr != null ? String(p.rr) : '-'],
-    ['Temp:', p?.temp != null ? String(p.temp) : '-'],
+  const vitals = [
+    { icon: '\uf08d', label: 'Blood Pressure', value: p?.bp || '-',    unit: 'mmHg', color: '#ef4444' },
+    { icon: '\uf21e', label: 'Pulse Rate',     value: p?.pulse != null ? String(p.pulse) : '-', unit: 'bpm',  color: '#f97316' },
+    { icon: '\uf72e', label: 'Resp. Rate',     value: p?.rr   != null ? String(p.rr)    : '-', unit: '/min', color: '#06b6d4' },
+    { icon: '\uf2c8', label: 'Temperature',    value: p?.temp != null ? String(p.temp)  : '-', unit: '°C',   color: '#8b5cf6' },
   ]
-  const boxW = Math.floor((rightW - 80) / 4) - 15
-  const boxH = 50
-  const gapY = 45
+
+  const VB_W = Math.floor((RIGHT_W - 32) / 4) - 4
+  const VB_H = 56
+  const VB_Y = ry + 30  // เริ่มต้นวาด vital box ภายในการ์ด
+
   for (let i = 0; i < 4; i++) {
-    const bx = rx + i * (boxW + 18)
-    drawField(ctx, fields[i][0], fields[i][1], bx, ry, boxW, boxH, colorText, borderColor, panel)
+    const bx = rightX + 14 + i * (VB_W + 5)
+
+    // Card bg ก่อน
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(37,99,235,0.04)'
+    _roundRect(ctx, bx, VB_Y, VB_W, VB_H, 10); ctx.fill()
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.08)' : c.border
+    ctx.lineWidth = 1; ctx.stroke()
+
+    // Accent bar — วาดด้วย clip เพื่อให้อยู่ภายใน card เท่านั้น
+    ctx.save()
+    _roundRect(ctx, bx, VB_Y, VB_W, VB_H, 10)
+    ctx.clip()
+    ctx.fillStyle = vitals[i].color
+    ctx.fillRect(bx, VB_Y, 4, VB_H)
+    ctx.restore()
+
+    // Icon
+    ctx.fillStyle = vitals[i].color
+    _faIcon(ctx, vitals[i].icon, bx + 18, VB_Y + 18, 12)
+
+    // Label
+    ctx.fillStyle = c.textMuted
+    ctx.font = '400 11px "SF Thonburi","Noto Sans Thai",Arial'
+    ctx.fillText(vitals[i].label, bx + 30, VB_Y + 17)
+
+    // Value — ขนาดสมดุล
+    ctx.fillStyle = c.text
+    ctx.font = '700 22px "SF Thonburi","Noto Sans Thai",Arial'
+    ctx.fillText(vitals[i].value, bx + 12, VB_Y + 46)
+
+    // Unit
+    ctx.fillStyle = vitals[i].color
+    ctx.font = '500 11px "SF Thonburi","Noto Sans Thai",Arial'
+    ctx.textAlign = 'right'
+    ctx.fillText(vitals[i].unit, bx + VB_W - 8, VB_Y + 48)
+    ctx.textAlign = 'left'
   }
-  ry += boxH + gapY
+  ry += VH + GAP
 
-  // Symptoms / Diagnosis
-  const halfW = Math.floor((rightW - 80) / 2) - 15
-  drawField(ctx, 'Symptoms:', p?.symptoms || '-', rx, ry, halfW, boxH, colorText, borderColor, panel)
-  drawField(ctx, 'Diagnosis:', p?.diagnosis || '-', rx + halfW + 18, ry, halfW, boxH, colorText, borderColor, panel)
-  ry += boxH + gapY
+  // ── SYMPTOMS + DIAGNOSIS ────────
+  const CLIN_H = 70
+  const halfW  = Math.floor((RIGHT_W - GAP) / 2)
+  _infoCard2(ctx, rightX, ry, halfW, CLIN_H, '\uf0f1', 'อาการ (Symptoms)', p?.symptoms || '-', '#06b6d4', c, isDark)
+  _infoCard2(ctx, rightX + halfW + GAP, ry, halfW, CLIN_H, '\uf46b', 'การวินิจฉัย (Diagnosis)', p?.diagnosis || '-', c.accent, c, isDark)
+  ry += CLIN_H + GAP
 
-  // Allergy / Conditions
-  const empInfo = p?.employees || {}
-  const allergyText = empInfo.drug_allergy ? `แพ้ยา: ${empInfo.drug_allergy}` : ''
-  const condText = empInfo.congenital_disease ? `โรคประจำตัว: ${empInfo.congenital_disease}` : ''
-  const combined = [allergyText, condText].filter(Boolean).join(' / ') || '-'
-  const allergyColor = (empInfo.drug_allergy || empInfo.congenital_disease) ? '#ef4444' : colorText
-  drawField(ctx, 'แพ้ยา / โรคประจำตัว:', combined, rx, ry, rightW - 80, boxH, colorText, borderColor, panel, allergyColor)
-  ry += boxH + gapY
+  // ── ALLERGY BANNER ──────────────
+  const hasAlert = !!(emp.drug_allergy || emp.congenital_disease)
+  const AL_H = 40
+  ctx.fillStyle = hasAlert ? c.dangerBg : c.successBg
+  _roundRect(ctx, rightX, ry, RIGHT_W, AL_H, 10); ctx.fill()
+  ctx.strokeStyle = hasAlert
+    ? (isDark ? 'rgba(239,68,68,0.35)' : 'rgba(220,38,38,0.25)')
+    : (isDark ? 'rgba(16,185,129,0.3)' : 'rgba(5,150,105,0.18)')
+  ctx.lineWidth = 1; ctx.stroke()
 
-  // Leave Info / Remark
-  let leaveText = '-'
+  ctx.fillStyle = hasAlert ? c.dangerText : c.successText
+  _faIcon(ctx, hasAlert ? '\uf071' : '\uf058', rightX + 18, ry + 26, 14)
+  ctx.font = `${hasAlert ? '700' : '500'} 13px "SF Thonburi","Noto Sans Thai",Arial`
+  const alTxt = hasAlert
+    ? [emp.drug_allergy ? `แพ้ยา: ${emp.drug_allergy}` : '', emp.congenital_disease ? `โรคประจำตัว: ${emp.congenital_disease}` : ''].filter(Boolean).join('   •   ')
+    : 'ไม่มีประวัติแพ้ยาหรือโรคประจำตัว'
+  ctx.fillText(alTxt, rightX + 38, ry + 26)
+  ry += AL_H + GAP
+
+  // ── LEAVE + REMARK ──────────────
+  const LEAVE_H = 60
+  let leaveText = '-', leaveBadge = 'ไม่มีการลา'
+  let leaveBg = isDark ? 'rgba(100,116,139,0.12)' : '#f1f5f9'
+  let leaveFg = c.textMuted
   if (p?.is_leave_allowed === false) {
-    leaveText = 'ไม่อนุญาตให้พัก'
+    leaveText = 'ไม่อนุญาตให้พัก'; leaveBadge = 'ไม่อนุญาต'
+    leaveBg = c.dangerBg; leaveFg = c.dangerText
   } else if (p?.is_leave_allowed === true) {
-    const start = formatDateYY(p?.leave_start)
-    const end = formatDateYY(p?.leave_end)
-    const days = p?.total_leave_days || 0
-    leaveText = `${start} - ${end} (${days} วัน)`
+    leaveText = `${formatDateYY(p?.leave_start)}  →  ${formatDateYY(p?.leave_end)}`
+    leaveBadge = `${p?.total_leave_days || 0} วัน`
+    leaveBg = c.successBg; leaveFg = c.successText
   }
-  const remarkText = p?.remark || '-'
-  drawField(ctx, 'ข้อมูลการลาพัก:', leaveText, rx, ry, halfW, boxH, colorText, borderColor, panel)
-  drawField(ctx, 'หมายเหตุ:', remarkText, rx + halfW + 18, ry, halfW, boxH, colorText, borderColor, panel)
-  ry += boxH + gapY
 
-  // Dispensing table
-  ctx.font = '700 22px "SF Thonburi","Noto Sans Thai", Arial'
-  ctx.fillStyle = colorText
-  ctx.fillText('การจ่ายยา', rx, ry)
-  ry += 30
-  
-  const colNo = 60
-  const colQty = 80
-  const colUnit = 100
-  const colName = rightW - 80 - (colNo + colQty + colUnit)
-  
-  // Header row
-  drawTableHeader(ctx, rx, ry, rightW - 80, borderColor, isDark ? '#1e293b' : '#f1f5f9', colorText, [
-    { text: 'No', w: colNo },
-    { text: 'ชื่อยา', w: colName },
-    { text: 'จำนวน', w: colQty },
-    { text: 'หน่วย', w: colUnit }
-  ])
-  ry += 45
+  _infoCard2(ctx, rightX, ry, halfW, LEAVE_H, '\uf073', 'การลาพัก', leaveText, '#10b981', c, isDark)
+
+  // Badge
+  const BADGE_W = 84
+  ctx.fillStyle = leaveBg
+  _roundRect(ctx, rightX + halfW - BADGE_W - 10, ry + 16, BADGE_W, 26, 13); ctx.fill()
+  ctx.fillStyle = leaveFg
+  ctx.font = '700 13px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.textAlign = 'center'
+  ctx.fillText(leaveBadge, rightX + halfW - BADGE_W / 2 - 10, ry + 33)
+  ctx.textAlign = 'left'
+
+  _infoCard2(ctx, rightX + halfW + GAP, ry, halfW, LEAVE_H, '\uf27b', 'หมายเหตุ', p?.remark || '-', c.textMuted, c, isDark)
+  ry += LEAVE_H + GAP
+
+  // ════════════════════════════════
+  // DISPENSING TABLE
+  // ════════════════════════════════
+  const tblH = H - ry - PAD
+  _card(ctx, rightX, ry, RIGHT_W, tblH, c.surface, c.border, 14, isDark)
+
+  // Header gradient
+  const thGrad = ctx.createLinearGradient(rightX, ry, rightX + RIGHT_W, ry)
+  thGrad.addColorStop(0, '#1e3a8a'); thGrad.addColorStop(1, '#4338ca')
+  ctx.fillStyle = thGrad
+  _roundRect(ctx, rightX, ry, RIGHT_W, 44, 14, true); ctx.fill()
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'
+  _roundRect(ctx, rightX, ry, RIGHT_W, 22, 14, true); ctx.fill()
+
+  ctx.fillStyle = '#ffffff'
+  _faIcon(ctx, '\uf484', rightX + 20, ry + 29, 15)
+  ctx.font = '700 15px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.fillText('การจ่ายยา  (Dispensing Records)', rightX + 42, ry + 29)
 
   const items = (p?.dispensing_records || []).map((d, i) => ({
     no: i + 1,
     name: d.medicine?.name || '-',
-    qty: d.amount || 0,
+    qty:  d.amount || 0,
     unit: d.medicine?.unit || '-'
-  })).slice(0, 15)
+  })).slice(0, 9)
 
-  ctx.font = '500 16px "SF Thonburi","Noto Sans Thai", Arial'
-  for (let idx = 0; idx < items.length; idx++) {
-    const it = items[idx]
-    if (idx % 2 === 0) {
-      ctx.fillStyle = rowAlt
-      roundRect(ctx, rx, ry - 5, rightW - 80, 40, 8).fill()
+  const COL_NO   = 48
+  const COL_QTY  = 84
+  const COL_UNIT = 90
+  const COL_NAME = RIGHT_W - COL_NO - COL_QTY - COL_UNIT - 44
+
+  // Column header
+  let ty = ry + 44
+  ctx.fillStyle = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(37,99,235,0.04)'
+  ctx.fillRect(rightX, ty, RIGHT_W, 28)
+  ctx.fillStyle = c.textMuted
+  ctx.font = '600 12px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.fillText('#',                  rightX + 16,                               ty + 19)
+  ctx.fillText('ชื่อยา / Medicine',  rightX + COL_NO + 12,                     ty + 19)
+  ctx.textAlign = 'right'
+  ctx.fillText('จำนวน',              rightX + COL_NO + COL_NAME + COL_QTY - 8, ty + 19)
+  ctx.textAlign = 'left'
+  ctx.fillText('หน่วย',              rightX + COL_NO + COL_NAME + COL_QTY + 10, ty + 19)
+  ty += 28
+
+  ctx.strokeStyle = c.border; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(rightX, ty); ctx.lineTo(rightX + RIGHT_W, ty); ctx.stroke()
+
+  const ROW_H = items.length > 0
+    ? Math.min(40, Math.max(32, Math.floor((tblH - 80) / items.length)))
+    : 40
+
+  for (let i = 0; i < items.length; i++) {
+    const it  = items[i]
+    const ry2 = ty + i * ROW_H
+
+    if (i % 2 === 0) {
+      ctx.fillStyle = c.rowOdd
+      ctx.fillRect(rightX, ry2, RIGHT_W, ROW_H)
     }
-    ctx.fillStyle = colorText
-    ctx.fillText(String(it.no), rx + 15, ry + 22)
-    ctx.fillText(it.name, rx + colNo + 10, ry + 22)
-    
-    ctx.textAlign = 'right'
-    ctx.fillText(String(it.qty), rx + colNo + colName + colQty - 20, ry + 22)
+
+    // No badge
+    ctx.fillStyle = c.pill
+    _roundRect(ctx, rightX + 10, ry2 + (ROW_H - 22) / 2, 30, 22, 6); ctx.fill()
+    ctx.fillStyle = c.pillText
+    ctx.font = '700 12px "SF Thonburi","Noto Sans Thai",Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText(String(it.no), rightX + 25, ry2 + ROW_H / 2 + 5)
     ctx.textAlign = 'left'
-    ctx.fillText(it.unit, rx + colNo + colName + colQty + 15, ry + 22)
-    
-    // row line
-    ctx.strokeStyle = isDark ? '#334155' : '#f1f5f9'
+
+    // Name
+    ctx.fillStyle = c.text
+    ctx.font = '500 13px "SF Thonburi","Noto Sans Thai",Arial'
+    let nm = String(it.name)
+    while (ctx.measureText(nm).width > COL_NAME - 10 && nm.length > 4) nm = nm.slice(0, -4) + '…'
+    ctx.fillText(nm, rightX + COL_NO + 10, ry2 + ROW_H / 2 + 5)
+
+    // Qty pill
+    const QTY_W = 44
+    ctx.fillStyle = isDark ? 'rgba(59,130,246,0.2)' : '#dbeafe'
+    _roundRect(ctx, rightX + COL_NO + COL_NAME + COL_QTY - QTY_W - 8, ry2 + (ROW_H - 22) / 2, QTY_W, 22, 11); ctx.fill()
+    ctx.fillStyle = c.accent
+    ctx.font = '700 13px "SF Thonburi","Noto Sans Thai",Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText(String(it.qty), rightX + COL_NO + COL_NAME + COL_QTY - QTY_W / 2 - 8, ry2 + ROW_H / 2 + 5)
+    ctx.textAlign = 'left'
+
+    // Unit
+    ctx.fillStyle = c.textMuted
+    ctx.font = '400 13px "SF Thonburi","Noto Sans Thai",Arial'
+    ctx.fillText(it.unit, rightX + COL_NO + COL_NAME + COL_QTY + 10, ry2 + ROW_H / 2 + 5)
+
+    // Row line
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(37,99,235,0.055)'
     ctx.lineWidth = 1
     ctx.beginPath()
-    ctx.moveTo(rx, ry + 35)
-    ctx.lineTo(rx + rightW - 80, ry + 35)
+    ctx.moveTo(rightX + 8, ry2 + ROW_H)
+    ctx.lineTo(rightX + RIGHT_W - 8, ry2 + ROW_H)
     ctx.stroke()
-    
-    ry += 40
   }
+
   if (!items.length) {
-    ctx.fillStyle = colorText
-    ctx.font = '500 16px "SF Thonburi","Noto Sans Thai", Arial'
-    ctx.fillText('ไม่มีการจ่ายยา', rx + 15, ry + 25)
+    ctx.fillStyle = c.textDim
+    ctx.font = '400 14px "SF Thonburi","Noto Sans Thai",Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText('ไม่มีการจ่ายยา', rightX + RIGHT_W / 2, ty + 40)
+    ctx.textAlign = 'left'
   }
+
+  // Summary
+  const totalMed = items.reduce((s, it) => s + it.qty, 0)
+  const sumY = ry + tblH - 36
+  const SUM_W = 230
+  ctx.fillStyle = isDark ? 'rgba(59,130,246,0.12)' : '#eff6ff'
+  _roundRect(ctx, rightX + RIGHT_W - SUM_W - 12, sumY, SUM_W, 28, 8); ctx.fill()
+  ctx.strokeStyle = isDark ? 'rgba(59,130,246,0.3)' : '#bfdbfe'
+  ctx.lineWidth = 1; ctx.stroke()
+  ctx.fillStyle = c.accent
+  _faIcon(ctx, '\uf0fe', rightX + RIGHT_W - SUM_W, sumY + 19, 12)
+  ctx.fillStyle = c.text
+  ctx.font = '600 13px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.textAlign = 'right'
+  ctx.fillText(`รวม  ${items.length} รายการ  •  ${totalMed} หน่วย`, rightX + RIGHT_W - 14, sumY + 19)
+  ctx.textAlign = 'left'
+
+  // Footer
+  ctx.fillStyle = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(37,99,235,0.22)'
+  ctx.font = '400 11px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.textAlign = 'center'
+  ctx.fillText('เอกสารนี้สร้างโดยระบบอัตโนมัติ  •  Medical Record System', W / 2, H - 5)
+  ctx.textAlign = 'left'
 }
+
+// ══════════════════════════════════════════════════════════
+// HELPER FUNCTIONS (แทนที่ทุก helper เก่า)
+// ══════════════════════════════════════════════════════════
+
+function _faIcon(ctx, unicode, x, y, size) {
+  // Render FontAwesome icon using Unicode glyph
+  // Requires FontAwesome font loaded in document.fonts
+  ctx.save()
+  ctx.font = `900 ${size}px FontAwesome`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillText(unicode, x, y)
+  ctx.restore()
+}
+
+function _roundRect(ctx, x, y, w, h, r, topOnly = false) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  if (topOnly) {
+    ctx.lineTo(x + w, y + h)
+    ctx.lineTo(x, y + h)
+  } else {
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+  }
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+  return ctx
+}
+
+function _card(ctx, x, y, w, h, bg, border, r, isDark) {
+  ctx.shadowColor = isDark ? 'rgba(0,0,0,0.6)' : 'rgba(37,99,235,0.10)'
+  ctx.shadowBlur = 20
+  ctx.shadowOffsetY = 4
+  ctx.fillStyle = bg
+  _roundRect(ctx, x, y, w, h, r); ctx.fill()
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
+  ctx.strokeStyle = border; ctx.lineWidth = 1; ctx.stroke()
+}
+
+function _infoCard2(ctx, x, y, w, h, faUnicode, label, value, iconColor, c, isDark) {
+  ctx.fillStyle = c.surfaceAlt
+  _roundRect(ctx, x, y, w, h, 10); ctx.fill()
+  ctx.strokeStyle = c.border; ctx.lineWidth = 1; ctx.stroke()
+
+  // Icon + label
+  ctx.fillStyle = iconColor
+  _faIcon(ctx, faUnicode, x + 18, y + 18, 12)
+  ctx.fillStyle = c.textMuted
+  ctx.font = '500 11px "SF Thonburi","Noto Sans Thai",Arial'
+  ctx.fillText(label, x + 32, y + 18)
+
+  // Value
+  ctx.fillStyle = c.text
+  ctx.font = '600 13px "SF Thonburi","Noto Sans Thai",Arial'
+  let val = String(value)
+  const maxW = w - 28
+  while (ctx.measureText(val).width > maxW && val.length > 4) val = val.slice(0, -4) + '…'
+  ctx.fillText(val, x + 14, y + h - 14)
+}
+
+async function _drawAvatar(ctx, url, cx, cy, r, c, isDark) {
+  // Gradient ring
+  const grad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r)
+  grad.addColorStop(0, '#3b82f6')
+  grad.addColorStop(1, '#7c3aed')
+  ctx.fillStyle = grad
+  ctx.beginPath(); ctx.arc(cx, cy, r + 4, 0, Math.PI * 2); ctx.fill()
+  // White gap
+  ctx.fillStyle = c.surface
+  ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2); ctx.fill()
+  // Clip photo
+  const img = await loadImgs(url)
+  ctx.save()
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip()
+  if (img) {
+    ctx.drawImage(img, cx - r, cy - r, r * 2, r * 2)
+  } else {
+    ctx.fillStyle = isDark ? '#1a2235' : '#dbeafe'
+    ctx.fill()
+    ctx.fillStyle = isDark ? '#3b82f6' : '#2563eb'
+    _faIcon(ctx, '\uf007', cx, cy + 8, r * 0.8)
+  }
+  ctx.restore()
+}
+
+// loadImg ยังคงใช้ฟังก์ชันเดิม (ไม่เปลี่ยน)
+function loadImgs(url) {
+  return new Promise((resolve) => {
+    if (!url) return resolve(null)
+    const i = new Image()
+    i.crossOrigin = 'anonymous'
+    i.onload = () => resolve(i)
+    i.onerror = () => resolve(null)
+    i.src = url
+  })
+}
+
+// Helper เก่า (roundRect, drawCircleImage, drawField, wrapCenterText, drawTableHeader)
+// ลบทิ้งได้เลย ไม่ได้ใช้แล้ว
 
 const downloadExportPng = () => {
   const canvas = exportCanvasRef.value
@@ -701,6 +1047,16 @@ const viewImage = (u) => {
   }
   return u
 }
+
+const getThumb = (u) => {
+  if (!u) return ''
+  const m = u.match(/\/d\/([A-Za-z0-9_-]+)/) || u.match(/[?&]id=([A-Za-z0-9_-]+)/)
+  if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`
+  if (/^[A-Za-z0-9_-]{20,}$/.test(u) && !u.startsWith('http')) {
+    return `https://drive.google.com/uc?export=view&id=${u}`
+  }
+  return u
+}
 </script>
 
 <template>
@@ -777,10 +1133,9 @@ const viewImage = (u) => {
         <thead>
           <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
             <th class="py-2 pr-3">วันที่</th>
-            <th class="py-2 pr-3">รหัสพนักงาน</th>
+            <!-- <th class="py-2 pr-3">รหัสพนักงาน</th> -->
             <th class="py-2 pr-3">ชื่อ-นามสกุล</th>
             <th class="py-2 pr-3">ตำแหน่ง</th>
-            <th class="py-2 pr-3">แผนก</th>
             <th class="py-2 pr-3">อาการ</th>
             <th class="py-2 pr-3">แพทย์วินิจฉัย</th>
             <th class="py-2 pr-3">วันเริ่มต้น-สิ้นสุดการพัก</th>
@@ -798,12 +1153,13 @@ const viewImage = (u) => {
             class="border-b border-clinic-border/60 dark:border-slate-800"
           >
             <td class="py-1.5 pr-3 whitespace-nowrap">
-              {{ new Date(r.created_at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }) }}
+              {{ new Date(r.created_at).toLocaleString('en-GB', { dateStyle: 'short'}) }} <br> <span class="text-center text-[10px] italic text-slate-600 dark:text-slate-400"> {{ new Date(r.created_at).toLocaleString('en-GB', {timeStyle: 'short' })}}</span>
             </td>
-            <td class="py-1.5 pr-3">{{ r.employee_code }}</td>
-            <td class="py-1.5 pr-3">{{ r.fullname }}</td>
-            <td class="py-1.5 pr-3">{{ r.position }}</td>
-            <td class="py-1.5 pr-3">{{ r.department }}</td>
+            <!-- <td class="py-1.5 pr-3">{{ r.employee_code }}</td> -->
+            <td class="py-1.5 pr-3">{{ r.fullname }} <br> <span class="text-center text-[10px] italic text-slate-600 dark:text-slate-400">( {{ r.employee_code }} )</span></td>
+            <!-- <td class="py-1.5 pr-3">{{ r.position }}</td> -->
+            <td class="py-1.5 pr-3">{{ r.position }} <br> <span class="text-center text-[10px] italic text-slate-600 dark:text-slate-400">{{ r.department }}</span></td>
+            <!-- <td class="py-1.5 pr-3">{{ r.department }}</td> -->
             <td class="py-1.5 pr-3">{{ r.symptoms }}</td>
             <td class="py-1.5 pr-3">{{ r.diagnosis }}</td>
             <td class="py-1.5 pr-3">
@@ -822,11 +1178,14 @@ const viewImage = (u) => {
                 :href="viewImage(r.image_url)"
                 target="_blank"
                 rel="noopener"
-                class="inline-flex flex-col items-center justify-center w-16 h-16 rounded border border-clinic-border dark:border-slate-700 text-slate-400 hover:text-slate-600"
+                class="inline-flex items-center justify-center w-16 h-16 rounded border border-clinic-border dark:border-slate-700 overflow-hidden hover:opacity-80 transition-opacity"
                 title="คลิกเพื่อดูรูป"
               >
-                <i class="fa-regular fa-image text-xl"></i>
-                <span class="text-[10px] mt-0.5">ดูรูปภาพ</span>
+                <img 
+                  :src="getThumb(r.image_url)" 
+                  alt="Treatment Image" 
+                  class="w-full h-full object-cover"
+                />
               </a>
               <div
                 v-else
