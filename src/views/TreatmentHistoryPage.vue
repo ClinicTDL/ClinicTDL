@@ -926,24 +926,23 @@ const toEndOfDayIso = (d) => {
 const loadHistory = async () => {
   loading.value = true
   try {
+    let selectStr = `
+      id,
+      employee_id,
+      created_at,
+      symptoms,
+      diagnosis,
+      image_url,
+      leave_start,
+      leave_end,
+      total_leave_days,
+      employees${department.value || searchAll.value ? '!inner' : ''}(employee_code, fullname, position, department),
+      creator:system_users!created_by(full_name),
+      dispensing_records(amount)
+    `
     let query = supabase
       .from('checkups')
-      .select(
-        `
-        id,
-        employee_id,
-        created_at,
-        symptoms,
-        diagnosis,
-        image_url,
-        leave_start,
-        leave_end,
-        total_leave_days,
-        employees(employee_code, fullname, position, department),
-        creator:system_users!created_by(full_name),
-        dispensing_records(amount)
-        `,
-      )
+      .select(selectStr)
       .order('created_at', { ascending: false })
       .limit(500)
 
@@ -959,26 +958,27 @@ const loadHistory = async () => {
     if (examinerId.value) {
       query = query.eq('created_by', examinerId.value)
     }
-    if (department.value || searchAll.value) {
-      const term = (searchAll.value || '').toString().trim()
-      let empQuery = supabase.from('employees').select('id').limit(5000)
-      if (department.value) empQuery = empQuery.eq('department', department.value)
-      if (term) empQuery = empQuery.or(`employee_code.ilike.%${term}%,fullname.ilike.%${term}%`)
-      const { data: empRows } = await empQuery
-      const ids = (empRows || []).map((e) => e.id)
-      if (department.value && !ids.length) {
-        records.value = []
-        totalCount.value = 0
-        return
+
+    if (department.value) {
+      query = query.eq('employees.department', department.value)
+    }
+
+    if (searchAll.value) {
+      const term = searchAll.value.toString().trim()
+      // ค้นหาพนักงานที่ตรงกับชื่อหรือรหัสก่อน เพื่อเอา IDs มาใช้กรองข้ามตาราง (OR)
+      const { data: empMatches } = await supabase
+        .from('employees')
+        .select('id')
+        .or(`employee_code.ilike.%${term}%,fullname.ilike.%${term}%`)
+        .limit(100)
+      
+      const matchIds = (empMatches || []).map(e => e.id)
+      let orConditions = `symptoms.ilike.%${term}%,diagnosis.ilike.%${term}%`
+      
+      if (matchIds.length > 0) {
+        orConditions += `,employee_id.in.(${matchIds.join(',')})`
       }
-      if (department.value && ids.length) {
-        query = query.in('employee_id', ids)
-      }
-      if (term) {
-        const orParts = [`symptoms.ilike.%${term}%`]
-        if (ids.length) orParts.push(`employee_id.in.(${ids.join(',')})`)
-        query = query.or(orParts.join(','))
-      }
+      query = query.or(orConditions)
     }
 
     const { data, error } = await query
@@ -1132,46 +1132,55 @@ const getThumb = (u) => {
       <table class="min-w-full text-xs">
         <thead>
           <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
-            <th class="py-2 pr-3">วันที่</th>
+            <th class="py-2 pr-3 text-center">วันที่</th>
             <!-- <th class="py-2 pr-3">รหัสพนักงาน</th> -->
-            <th class="py-2 pr-3">ชื่อ-นามสกุล</th>
-            <th class="py-2 pr-3">ตำแหน่ง</th>
-            <th class="py-2 pr-3">อาการ</th>
-            <th class="py-2 pr-3">แพทย์วินิจฉัย</th>
-            <th class="py-2 pr-3">วันเริ่มต้น-สิ้นสุดการพัก</th>
-            <th class="py-2 pr-3 text-right">จำนวนวันพัก</th>
-            <th class="py-2 pr-3 text-right">จำนวนยาที่เบิก</th>
-            <th class="py-2 pr-3">รูปภาพ</th>
-            <th class="py-2 pr-3">ตรวจโดย</th>
-            <th class="py-2 pr-3 text-right">ส่งออก</th>
+            <th class="py-2 pr-3 text-center">ชื่อ-นามสกุล</th>
+            <th class="py-2 pr-3 text-center">ตำแหน่ง</th>
+            <th class="py-2 pr-3 text-center">อาการ และ แพทย์วินิจฉัย</th>
+            <!-- <th class="py-2 pr-3">แพทย์วินิจฉัย</th> -->
+            <th class="py-2 pr-3 text-center">วันเริ่มต้น-สิ้นสุดการพัก</th>
+            <!-- <th class="py-2 pr-3 text-right">จำนวนวันพัก</th> -->
+            <th class="py-2 pr-3 text-center">จำนวนยาที่เบิก</th>
+            <th class="py-2 pr-3 text-center">รูปภาพ</th>
+            <th class="py-2 pr-3 text-center">ตรวจโดย</th>
+            <th class="py-2 pr-3 text-center">ส่งออก</th>
           </tr>
         </thead>
         <tbody>
+          <tr v-if="loading">
+            <td colspan="10" class="py-8 text-center">
+              <div class="flex flex-col items-center gap-2">
+                <i class="fa-solid fa-circle-notch fa-spin text-2xl text-clinic-blue"></i>
+                <span class="text-slate-500 animate-pulse">กำลังโหลดข้อมูล...</span>
+              </div>
+            </td>
+          </tr>
           <tr
+            v-else
             v-for="r in records"
             :key="r.id"
-            class="border-b border-clinic-border/60 dark:border-slate-800"
+            class="border-b border-clinic-border/60 dark:border-slate-800 text-center dark:text-white"
           >
             <td class="py-1.5 pr-3 whitespace-nowrap">
-              {{ new Date(r.created_at).toLocaleString('en-GB', { dateStyle: 'short'}) }} <br> <span class="text-center text-[10px] italic text-slate-600 dark:text-slate-400"> {{ new Date(r.created_at).toLocaleString('en-GB', {timeStyle: 'short' })}}</span>
+              {{ new Date(r.created_at).toLocaleString('en-GB', { dateStyle: 'short'}) }} <br> <span class="bg-fuchsia-100 dark:bg-fuchsia-800/40 text-center text-[10px] border border-fuchsia-200 dark:border-fuchsia-800/40 px-1.5 rounded-full italic text-fuchsia-600 dark:text-fuchsia-400"> {{ new Date(r.created_at).toLocaleString('en-GB', {timeStyle: 'short' })}}</span>
             </td>
             <!-- <td class="py-1.5 pr-3">{{ r.employee_code }}</td> -->
-            <td class="py-1.5 pr-3">{{ r.fullname }} <br> <span class="text-center text-[10px] italic text-slate-600 dark:text-slate-400">( {{ r.employee_code }} )</span></td>
+            <td class="py-1.5 pr-3">{{ r.fullname }} <br> <span class="bg-emerald-100 dark:bg-emerald-800/40 text-center text-[10px] italic text-emerald-600 dark:text-emerald-400 px-1.5 rounded-full border border-emerald-200 dark:border-emerald-800/40">{{ r.employee_code }}</span></td>
             <!-- <td class="py-1.5 pr-3">{{ r.position }}</td> -->
-            <td class="py-1.5 pr-3">{{ r.position }} <br> <span class="text-center text-[10px] italic text-slate-600 dark:text-slate-400">{{ r.department }}</span></td>
+            <td class="py-1.5 pr-3">{{ r.position }} <br> <span class="bg-teal-100 dark:bg-teal-800/40 text-center text-[10px] italic text-teal-600 dark:text-teal-400 px-1.5 rounded-full border border-teal-200 dark:border-teal-800/40">{{ r.department }}</span></td>
             <!-- <td class="py-1.5 pr-3">{{ r.department }}</td> -->
-            <td class="py-1.5 pr-3">{{ r.symptoms }}</td>
-            <td class="py-1.5 pr-3">{{ r.diagnosis }}</td>
+            <!-- <td class="py-1.5 pr-3">{{ r.symptoms }}</td> -->
+            <td class="py-1.5 pr-3">{{ r.symptoms }} <br> <span class="bg-blue-100 dark:bg-blue-800/40 text-sky-600 dark:text-sky-400 text-[11px] px-1.5 rounded-full border border-blue-200 dark:border-blue-800/40">{{ r.diagnosis }}</span></td>
             <td class="py-1.5 pr-3">
               <span v-if="r.leave_start">
-                {{ formatDateYY(r.leave_start) }} - {{ formatDateYY(r.leave_end) }}
+                {{ formatDateYY(r.leave_start) }} - {{ formatDateYY(r.leave_end) }} <br> <span class="bg-rose-100 dark:bg-rose-800/40 text-center text-[10px] italic text-rose-600 dark:text-rose-400 px-1.5 rounded-full border border-rose-200 dark:border-rose-800/40 py-0.5">{{ r.total_leave_days > 0 ? r.total_leave_days : '-' }} วัน </span>
               </span>
               <span v-else>-</span>
             </td>
-            <td class="py-1.5 pr-3 text-right">
+            <!-- <td class="py-1.5 pr-3 text-right">
               {{ r.total_leave_days > 0 ? r.total_leave_days : '-' }}
-            </td>
-            <td class="py-1.5 pr-3 text-right">{{ r.amount }}</td>
+            </td> -->
+            <td class="py-1.5 pr-3 text-right"> <span class="bg-amber-100 dark:bg-amber-800/40 text-amber-600 dark:text-amber-400 text-[11px] px-1.5 rounded-full border border-amber-200 dark:border-amber-800/40">{{ r.amount }} หน่วย</span></td>
             <td class="py-1.5 pr-3">
               <a
                 v-if="viewImage(r.image_url)"
@@ -1209,7 +1218,7 @@ const getThumb = (u) => {
               </button>
             </td>
           </tr>
-          <tr v-if="!records.length">
+          <tr v-if="!loading && !records.length">
             <td colspan="10" class="py-4 text-center text-slate-400">
               ไม่พบข้อมูล
             </td>

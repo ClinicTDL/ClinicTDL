@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { supabase, supabaseStorage, STORAGE_BUCKET } from '../supabaseClient'
 import { showToast, showConfirm } from '../stores/ui'
 const employeeCode = ref('')
@@ -34,22 +34,94 @@ const formatDiagnosisOnBlur = () => {
   diagnosis.value = toTitleCaseEng(diagnosis.value || '')
 }
 
-const videoRef = ref(null)
-const canvasRef = ref(null)
 const photoDataUrl = ref('')
-const capturing = ref(false)
-const cameraError = ref('')
 const fileInputRef = ref(null)
-const availableCameras = ref([])
-const selectedCameraId = ref('')
-const isSecureCameraAllowed = () => {
-  const host = location.hostname
-  return (
-    window.isSecureContext &&
-    (location.protocol === 'https:' ||
-      host === 'localhost' ||
-      host === '127.0.0.1')
-  )
+const isDragging = ref(false)
+
+const handleDrop = (e) => {
+  isDragging.value = false
+  const file = e.dataTransfer.files?.[0]
+  if (file && file.type.startsWith('image/')) {
+    processFile(file)
+  } else {
+    showToast('error', 'กรุณาเลือกไฟล์รูปภาพเท่านั้น')
+  }
+}
+
+const handleDragOver = (e) => {
+  isDragging.value = true
+}
+
+const handleDragLeave = () => {
+  isDragging.value = false
+}
+
+const processFile = async (file) => {
+  const toDataURL = (blob) =>
+    new Promise((resolve) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(fr.result)
+      fr.readAsDataURL(blob)
+    })
+  
+  const reader = new FileReader()
+  reader.onload = async (e) => {
+    const baseDataUrl = e.target.result
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image()
+        i.onload = () => resolve(i)
+        i.onerror = reject
+        i.src = baseDataUrl
+      })
+      const ow = img.naturalWidth || img.width || 1280
+      const oh = img.naturalHeight || img.height || 720
+      const maxDim = 1024
+      let rw = ow
+      let rh = oh
+      if (ow > oh && ow > maxDim) {
+        rw = maxDim
+        rh = Math.round((oh * maxDim) / ow)
+      } else if (oh >= ow && oh > maxDim) {
+        rh = maxDim
+        rw = Math.round((ow * maxDim) / oh)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = rw
+      canvas.height = rh
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, rw, rh)
+      const qualities = [0.8, 0.7, 0.6, 0.5, 0.4]
+      let best = null
+      for (const q of qualities) {
+        const webpBlob = await new Promise((resolve) =>
+          canvas.toBlob(resolve, 'image/webp', q),
+        )
+        const jpegBlob = await new Promise((resolve) =>
+          canvas.toBlob(resolve, 'image/jpeg', q),
+        )
+        const pick =
+          webpBlob && jpegBlob
+            ? webpBlob.size <= jpegBlob.size
+              ? { blob: webpBlob, mime: 'image/webp' }
+              : { blob: jpegBlob, mime: 'image/jpeg' }
+            : jpegBlob
+            ? { blob: jpegBlob, mime: 'image/jpeg' }
+            : { blob: webpBlob, mime: 'image/webp' }
+        if (!best || pick.blob.size < best.blob.size) best = pick
+        if (pick.blob.size <= 100 * 1024) {
+          const out = await toDataURL(pick.blob)
+          photoDataUrl.value = out
+          return
+        }
+      }
+      const out = await toDataURL(best.blob)
+      photoDataUrl.value = out
+    } catch {
+      photoDataUrl.value = baseDataUrl
+    }
+  }
+  reader.readAsDataURL(file)
 }
 
 const medicineSearch = ref('')
@@ -59,8 +131,6 @@ const searchingMedicines = ref(false)
 
 const saving = ref(false)
 const message = ref('')
-
-let mediaStream = null
 
 watch(employeeCode, async (val) => {
   if (suppressEmployeeSearch.value) {
@@ -122,118 +192,6 @@ const selectEmployee = (emp) => {
   showEmployeeOptions.value = false
 }
 
-const refreshCameras = async () => {
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    const cams = devices.filter((d) => d.kind === 'videoinput')
-    availableCameras.value = cams.map((d, i) => ({
-      deviceId: d.deviceId || `${i}`,
-      label: d.label || `Camera ${i + 1}`,
-    }))
-    if (!selectedCameraId.value && availableCameras.value.length) {
-      selectedCameraId.value = availableCameras.value[0].deviceId
-    }
-  } catch (e) {}
-}
-
-const startCamera = async () => {
-  capturing.value = true
-  cameraError.value = ''
-  try {
-    if (!isSecureCameraAllowed()) {
-      capturing.value = false
-      cameraError.value =
-        'มือถือจำเป็นต้องใช้งานผ่าน HTTPS หรือ localhost เพื่อเปิดกล้อง'
-      return
-    }
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((t) => t.stop())
-      mediaStream = null
-    }
-    await refreshCameras()
-    if (!availableCameras.value.length) {
-      try {
-        const preflight = await navigator.mediaDevices.getUserMedia({ video: true })
-        preflight.getTracks().forEach((t) => t.stop())
-        await refreshCameras()
-      } catch (e) {
-        if (e?.name === 'NotAllowedError') {
-          throw e
-        }
-      }
-    }
-    if (!availableCameras.value.length) {
-      throw Object.assign(new Error('ไม่พบอุปกรณ์กล้อง'), { name: 'NotFoundError' })
-    }
-
-    const validSelected = availableCameras.value.find((c) => c.deviceId === selectedCameraId.value)
-    const candidates = []
-    if (validSelected) {
-      candidates.push({ video: { deviceId: { exact: selectedCameraId.value }, width: { ideal: 1280 }, height: { ideal: 720 } } })
-    }
-    candidates.push({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } })
-    candidates.push({ video: { facingMode: 'environment' } })
-    candidates.push({ video: true })
-
-    let stream = null
-    let lastErr = null
-    for (const c of candidates) {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(c)
-        break
-      } catch (e) {
-        lastErr = e
-        if (e?.name === 'NotFoundError' && c?.video?.deviceId?.exact) {
-          selectedCameraId.value = ''
-        }
-      }
-    }
-    if (!stream) throw lastErr || new Error('ไม่สามารถเปิดกล้องได้')
-
-    mediaStream = stream
-    if (videoRef.value) {
-      videoRef.value.srcObject = mediaStream
-      const playPromise = videoRef.value.play()
-      if (playPromise && typeof playPromise.then === 'function') {
-        try {
-          await playPromise
-        } catch {}
-      }
-    }
-    await refreshCameras()
-  } catch (err) {
-    console.error('Camera error', err)
-    capturing.value = false
-    if (err?.name === 'NotAllowedError') {
-      cameraError.value = 'เบราว์เซอร์ไม่อนุญาตให้ใช้กล้อง กรุณาอนุญาต'
-    } else if (err?.name === 'NotFoundError') {
-      cameraError.value = 'ไม่พบอุปกรณ์กล้อง'
-    } else {
-      cameraError.value = 'ไม่สามารถเปิดกล้องได้: ' + (err?.message || 'Unknown error')
-    }
-  }
-}
-
-const stopCamera = () => {
-  capturing.value = false
-  if (mediaStream) {
-    mediaStream.getTracks().forEach((t) => t.stop())
-    mediaStream = null
-  }
-}
-
-const capturePhoto = () => {
-  if (!capturing.value || !videoRef.value || !canvasRef.value || !mediaStream) return
-  const video = videoRef.value
-  if (!video.videoWidth || !video.videoHeight) return
-  const canvas = canvasRef.value
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-  const ctx = canvas.getContext('2d')
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-  photoDataUrl.value = canvas.toDataURL('image/jpeg')
-}
-
 const clearPhoto = () => {
   photoDataUrl.value = ''
 }
@@ -245,70 +203,11 @@ const triggerFileSelect = () => {
 const onFileSelected = async (e) => {
   const file = e.target.files?.[0]
   if (!file) return
-  const toDataURL = (blob) =>
-    new Promise((resolve) => {
-      const fr = new FileReader()
-      fr.onload = () => resolve(fr.result)
-      fr.readAsDataURL(blob)
-    })
-  const baseDataUrl = await new Promise((resolve) => {
-    const fr = new FileReader()
-    fr.onload = () => resolve(fr.result)
-    fr.readAsDataURL(file)
-  })
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const i = new Image()
-      i.onload = () => resolve(i)
-      i.onerror = reject
-      i.src = baseDataUrl
-    })
-    const ow = img.naturalWidth || img.width || 1280
-    const oh = img.naturalHeight || img.height || 720
-    const maxDim = 1024
-    let rw = ow
-    let rh = oh
-    if (ow > oh && ow > maxDim) {
-      rw = maxDim
-      rh = Math.round((oh * maxDim) / ow)
-    } else if (oh >= ow && oh > maxDim) {
-      rh = maxDim
-      rw = Math.round((ow * maxDim) / oh)
-    }
-    const canvas = document.createElement('canvas')
-    canvas.width = rw
-    canvas.height = rh
-    const ctx = canvas.getContext('2d')
-    ctx.drawImage(img, 0, 0, rw, rh)
-    const qualities = [0.8, 0.7, 0.6, 0.5, 0.4]
-    let best = null
-    for (const q of qualities) {
-      const webpBlob = await new Promise((resolve) =>
-        canvas.toBlob(resolve, 'image/webp', q),
-      )
-      const jpegBlob = await new Promise((resolve) =>
-        canvas.toBlob(resolve, 'image/jpeg', q),
-      )
-      const pick =
-        webpBlob && jpegBlob
-          ? webpBlob.size <= jpegBlob.size
-            ? { blob: webpBlob, mime: 'image/webp' }
-            : { blob: jpegBlob, mime: 'image/jpeg' }
-          : jpegBlob
-          ? { blob: jpegBlob, mime: 'image/jpeg' }
-          : { blob: webpBlob, mime: 'image/webp' }
-      if (!best || pick.blob.size < best.blob.size) best = pick
-      if (pick.blob.size <= 100 * 1024) {
-        const out = await toDataURL(pick.blob)
-        photoDataUrl.value = out
-        return
-      }
-    }
-    const out = await toDataURL(best.blob)
-    photoDataUrl.value = out
-  } catch {
-    photoDataUrl.value = baseDataUrl
+  if (!file.type.startsWith('image/')) {
+    showToast('error', 'กรุณาเลือกไฟล์รูปภาพเท่านั้น')
+    return
   }
+  processFile(file)
 }
 
 const searchMedicines = async () => {
@@ -725,7 +624,6 @@ const saveCheckup = async () => {
     photoDataUrl.value = ''
     medicineSearch.value = ''
     medicineResults.value = []
-    stopCamera()
   } catch (err) {
     console.error('Save checkup error', err)
     message.value = 'Failed to save. Please try again.'
@@ -734,10 +632,6 @@ const saveCheckup = async () => {
     saving.value = false
   }
 }
-
-onMounted(() => {
-  refreshCameras()
-})
 
 watch(isLeaveAllowed, (val) => {
   const today = new Date()
@@ -993,58 +887,53 @@ watch([leaveStart, leaveEnd], () => {
         <h2 class="text-sm font-medium">รูปภาพผู้ป่วย (รับยา)</h2>
 
         <div class="space-y-2">
-          <div class="relative w-full aspect-video bg-slate-100 dark:bg-slate-900 rounded-lg overflow-hidden flex items-center justify-center">
-            <video
-              ref="videoRef"
-              autoplay
-              playsinline
-              class="w-full h-full object-cover"
-            ></video>
-            <canvas ref="canvasRef" class="hidden"></canvas>
-            <div
-              v-if="!capturing"
-              class="absolute inset-0 flex items-center justify-center text-xs text-slate-400"
-            >
-              {{ cameraError || 'ปิดกล้อง' }}
+          <!-- Drop Zone -->
+          <div 
+            v-if="!photoDataUrl"
+            class="relative w-full aspect-video bg-slate-50 dark:bg-slate-900/50 rounded-xl border-2 border-dashed transition-all duration-200 flex flex-col items-center justify-center cursor-pointer group overflow-hidden"
+            :class="isDragging ? 'border-clinic-blue bg-blue-50/50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 hover:border-blue-600/50 dark:hover:border-slate-300 hover:bg-blue-50/30 dark:hover:bg-blue-900/10'"
+            @click="triggerFileSelect"
+            @dragover.prevent="handleDragOver"
+            @dragleave.prevent="handleDragLeave"
+            @drop.prevent="handleDrop"
+          >
+            <div class="flex flex-col items-center gap-2 pointer-events-none">
+              <div class="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-clinic-blue transition-transform group-hover:scale-110">
+                <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+              </div>
+              <div class="text-center">
+                <p class="text-[13px] font-medium text-slate-700 dark:text-slate-200">คลิก หรือ ลากรูปภาพมาวาง</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">รองรับไฟล์รูปภาพเท่านั้น</p>
+              </div>
             </div>
           </div>
 
-          <div class="flex gap-2 text-xs">
-            <button
-              type="button"
-              class="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-clinic-border dark:border-slate-600 px-2 py-1.5 hover:bg-clinic-light dark:hover:bg-slate-800"
-              @click="startCamera"
-            >
-              <i class="fa-solid fa-camera"></i>
-              <span>เปิดกล้อง</span>
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center justify-center gap-1 rounded-lg border border-clinic-border dark:border-slate-600 px-2 py-1.5 hover:bg-clinic-light dark:hover:bg-slate-800"
-              @click="stopCamera"
-            >
-              <i class="fa-solid fa-stop"></i>
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center justify-center gap-1 rounded-lg border border-clinic-border dark:border-slate-600 px-2 py-1.5 hover:bg-clinic-light dark:hover:bg-slate-800"
-              @click="triggerFileSelect"
-            >
-              <i class="fa-solid fa-upload"></i>
-              <span>อัปโหลดรูป</span>
-            </button>
+          <!-- Preview Area -->
+          <div v-else class="relative w-full aspect-video rounded-xl overflow-hidden border border-clinic-border dark:border-slate-700 shadow-sm group">
+            <img
+              :src="photoDataUrl"
+              alt="Patient Photo"
+              class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+            <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+              <button
+                type="button"
+                class="w-9 h-9 rounded-full bg-white text-slate-700 flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors shadow-lg"
+                title="ลบรูปภาพ"
+                @click="clearPhoto"
+              >
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+              <button
+                type="button"
+                class="w-9 h-9 rounded-full bg-white text-slate-700 flex items-center justify-center hover:bg-blue-50 hover:text-blue-600 transition-colors shadow-lg"
+                title="เปลี่ยนรูปภาพ"
+                @click="triggerFileSelect"
+              >
+                <i class="fa-solid fa-arrows-rotate"></i>
+              </button>
+            </div>
           </div>
-
-          <button
-            type="button"
-            :disabled="!capturing"
-            class="w-full inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs"
-            :class="capturing ? 'bg-clinic-blue text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'"
-            @click="capturePhoto"
-          >
-            <i class="fa-solid fa-circle-dot"></i>
-            <span>ถ่ายภาพ</span>
-          </button>
 
           <input
             ref="fileInputRef"
@@ -1053,27 +942,13 @@ watch([leaveStart, leaveEnd], () => {
             class="hidden"
             @change="onFileSelected"
           />
-
-          <div v-if="photoDataUrl" class="mt-2">
-            <div class="text-[11px] text-slate-500 mb-1">
-              ภาพถ่ายผู้ป่วย
-            </div>
-            <div class="relative">
-              <img
-                :src="photoDataUrl"
-                alt="Captured"
-                class="w-full rounded-lg border border-clinic-border dark:border-slate-700"
-              />
-              <button
-                type="button"
-                class="absolute top-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/70"
-                title="Remove photo"
-                @click="clearPhoto"
-              >
-                <i class="fa-solid fa-xmark"></i>
-              </button>
-            </div>
-          </div>
+        </div>
+        <div class="space-y-2">
+          <p class="text-[14px] text-slate-500 dark:text-slate-200 ms-2">โปรดโหลดรูปภาพผู้ป่วย (รับยา) ที่ถูกต้อง</p>
+          <p class="text-[12px] text-slate-500 dark:text-slate-200 ms-2">รองรับไฟล์รูปภาพเท่านั้น</p>
+          <p class="text-[12px] border-3 border-gray-50 dark:border-slate-800 border-l-rose-600 dark:border-l-rose-500 font-bold text-yellow-600 dark:text-yellow-400 ms-2 p-1 rounded"> วิธีอัพโหลดรูปภาพ</p>
+          <p class="text-[12px] text-slate-400 dark:text-slate-200 ms-2 italic"> <span class="font-bold">1.</span> ลากไฟล์จากเครื่องมาไว้ในช่องเลือกรูปภาพ</p>
+          <p class="text-[12px] text-slate-400 dark:text-slate-200 ms-2 italic"> <span class="font-bold">2.</span> คลิกในช่องเลือกรูปภาพเพื่อเลือกไฟล์จากเครื่อง</p>
         </div>
       </div>
     </div>

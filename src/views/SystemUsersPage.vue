@@ -177,12 +177,15 @@ onMounted(loadUsers)
         รายชื่อผู้ใช้งาน
       </h1>
       <button
-        type="button"
-        class="px-3 py-2 rounded-lg text-xs bg-clinic-blue text-white"
-        @click="openAdd"
-      >
-        เพิ่มผู้ใช้งาน
-      </button>
+      type="button"
+      class="px-3 py-2 rounded-lg text-xs bg-clinic-blue text-white hover:scale-105 transition-transform duration-300"
+      @click="openAdd"
+      @mouseover="handleIconHover(true)"
+      @mouseout="handleIconHover(false)"
+    >
+      <i class="fas fa-plus me-1"></i>
+      เพิ่มผู้ใช้งาน
+    </button>
     </div>
 
     <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-3 overflow-x-auto">
@@ -203,7 +206,7 @@ onMounted(loadUsers)
             :key="u.id"
             class="border-b border-clinic-border/60 dark:border-slate-800"
           >
-            <td class="py-1.5 pr-3">{{ u.username }}</td>
+            <td class="py-1.5 pr-3"><span class="bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 border border-teal-600 dark:border-teal-700/40 p-1 rounded-full">{{ u.username }}</span></td>
             <td class="py-1.5 pr-3">{{ u.emp_code }}</td>
             <td class="py-1.5 pr-3">{{ u.full_name }}</td>
             <td v-if="isAdmin" class="py-1.5 pr-3">

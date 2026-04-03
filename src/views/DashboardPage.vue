@@ -88,6 +88,39 @@ const leaveStats = ref([]) // { department, leaveCount, change }
 const deptPageIndex = ref(0)
 const leavePageIndex = ref(0)
 
+// Modal State
+const showDeptModal = ref(false)
+const selectedDept = ref('')
+const deptDetails = ref([])
+const diagnosisSummary = ref([])
+const loadingDeptDetails = ref(false)
+
+const showLeaveModal = ref(false)
+const selectedLeaveDept = ref('')
+const leaveDetails = ref([])
+const loadingLeaveDetails = ref(false)
+
+const showDiagModal = ref(false)
+const selectedDiagName = ref('')
+const diagDetails = ref([])
+const diagDeptSummary = ref([])
+const loadingDiagDetails = ref(false)
+
+const showDispensedModal = ref(false)
+const dispensedDetails = ref([])
+const dispensedPersonSummary = ref([])
+const loadingDispensedDetails = ref(false)
+
+const showMedicineModal = ref(false)
+const selectedMedicineName = ref('')
+const medicineDetails = ref([])
+const medicinePersonSummary = ref([])
+const loadingMedicineDetails = ref(false)
+
+// Shared date objects for details fetching
+let currentStartDate = null
+let currentEndDate = null
+
 // Date Filter State
 const dateRange = ref('this-month') // this-month, last-month, this-week, last-week, custom
 const customStartDate = ref('')
@@ -301,6 +334,10 @@ const loadDashboardData = async () => {
       prevStartDate = new Date(startDate.getTime() - diff)
       prevEndDate = new Date(startDate.getTime() - 1)
     }
+
+    // Save for detail modals
+    currentStartDate = startDate
+    currentEndDate = endDate
 
     const last15Start = new Date(now)
     last15Start.setDate(now.getDate() - 14)
@@ -554,6 +591,228 @@ watch([dateRange, customStartDate, customEndDate], () => {
 onMounted(loadDashboardData)
 
 // Helper to capture chart
+const openDeptDetails = async (dept) => {
+  selectedDept.value = dept
+  showDeptModal.value = true
+  loadingDeptDetails.value = true
+  deptDetails.value = []
+  diagnosisSummary.value = []
+
+  try {
+    let query = supabase
+      .from('checkups')
+      .select('id, created_at, diagnosis, symptoms, employees!inner(employee_code, fullname, department)')
+      .gte('created_at', currentStartDate.toISOString())
+      .lte('created_at', currentEndDate.toISOString())
+      .order('created_at', { ascending: false })
+
+    if (dept === 'Unknown' || !dept) {
+      query = supabase
+        .from('checkups')
+        .select('id, created_at, diagnosis, symptoms, employees(employee_code, fullname, department)')
+        .is('employees', null)
+        .gte('created_at', currentStartDate.toISOString())
+        .lte('created_at', currentEndDate.toISOString())
+        .order('created_at', { ascending: false })
+    } else {
+      query = query.ilike('employees.department', dept)
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+
+    const rows = data || []
+    deptDetails.value = rows.map(r => ({
+      ...r,
+      fullname: r.employees?.fullname || '-',
+      employee_code: r.employees?.employee_code || '-',
+      diagnosis: (r.diagnosis || '').trim() || '-'
+    }))
+
+    const summaryMap = {}
+    rows.forEach(r => {
+      let d = (r.diagnosis || '').trim()
+      if (!d) d = 'ไม่ระบุอาการ/วินิจฉัย'
+      summaryMap[d] = (summaryMap[d] || 0) + 1
+    })
+    diagnosisSummary.value = Object.entries(summaryMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+
+  } catch (err) {
+    console.error('Fetch dept details failed', err)
+  } finally {
+    loadingDeptDetails.value = false
+  }
+}
+
+const openLeaveDetails = async (dept) => {
+  selectedLeaveDept.value = dept
+  showLeaveModal.value = true
+  loadingLeaveDetails.value = true
+  leaveDetails.value = []
+
+  try {
+    const { data, error } = await supabase
+      .from('checkups')
+      .select('id, created_at, leave_start, leave_end, total_leave_days, employees!inner(employee_code, fullname, department)')
+      .eq('employees.department', dept)
+      .eq('is_leave_allowed', true)
+      .gte('created_at', currentStartDate.toISOString())
+      .lte('created_at', currentEndDate.toISOString())
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    leaveDetails.value = (data || []).map(r => ({
+      ...r,
+      fullname: r.employees?.fullname || '-',
+      employee_code: r.employees?.employee_code || '-',
+      period: `${new Date(r.leave_start).toLocaleDateString('th-TH')} - ${new Date(r.leave_end).toLocaleDateString('th-TH')}`,
+      days: r.total_leave_days || 0
+    }))
+
+  } catch (err) {
+    console.error('Fetch leave details failed', err)
+  } finally {
+    loadingLeaveDetails.value = false
+  }
+}
+
+const openDiagDetails = async (diagName) => {
+  if (!diagName || diagName === '-') return
+  selectedDiagName.value = diagName
+  showDiagModal.value = true
+  loadingDiagDetails.value = true
+  diagDetails.value = []
+  diagDeptSummary.value = []
+
+  try {
+    const { data, error } = await supabase
+      .from('checkups')
+      .select('id, created_at, diagnosis, employees(employee_code, fullname, department)')
+      .ilike('diagnosis', `%${diagName.trim()}%`)
+      .gte('created_at', currentStartDate.toISOString())
+      .lte('created_at', currentEndDate.toISOString())
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    const rows = (data || []).filter(r => (r.diagnosis || '').trim() === diagName.trim())
+    diagDetails.value = rows.map(r => ({
+      ...r,
+      fullname: r.employees?.fullname || '-',
+      employee_code: r.employees?.employee_code || '-',
+      department: r.employees?.department || '-'
+    }))
+
+    const deptMap = {}
+    rows.forEach(r => {
+      const d = r.employees?.department || 'ไม่ระบุ'
+      deptMap[d] = (deptMap[d] || 0) + 1
+    })
+    diagDeptSummary.value = Object.entries(deptMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+
+  } catch (err) {
+    console.error('Fetch diagnosis details failed', err)
+  } finally {
+    loadingDiagDetails.value = false
+  }
+}
+
+const openMedicineDetails = async (medName) => {
+  if (!medName || medName === 'Unknown') return
+  selectedMedicineName.value = medName
+  showMedicineModal.value = true
+  loadingMedicineDetails.value = true
+  medicineDetails.value = []
+  medicinePersonSummary.value = []
+
+  try {
+    const { data, error } = await supabase
+      .from('dispensing_records')
+      .select('id, amount, created_at, medicine:medicine_list!inner(name), checkup:checkups(diagnosis, employees(employee_code, fullname, department))')
+      .eq('medicine.name', medName)
+      .gte('created_at', currentStartDate.toISOString())
+      .lte('created_at', currentEndDate.toISOString())
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    const rows = data || []
+    medicineDetails.value = rows.map(r => ({
+      ...r,
+      fullname: r.checkup?.employees?.fullname || '-',
+      employee_code: r.checkup?.employees?.employee_code || '-',
+      department: r.checkup?.employees?.department || '-',
+      diagnosis: r.checkup?.diagnosis || '-'
+    }))
+
+    const personMap = {}
+    rows.forEach(r => {
+      const code = r.checkup?.employees?.employee_code || 'unknown'
+      const name = r.checkup?.employees?.fullname || '-'
+      if (!personMap[code]) personMap[code] = { name, total: 0 }
+      personMap[code].total += (r.amount || 0)
+    })
+    medicinePersonSummary.value = Object.entries(personMap)
+      .map(([code, p]) => ({ code, name: p.name, total: p.total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10)
+
+  } catch (err) {
+    console.error('Fetch medicine details failed', err)
+  } finally {
+    loadingMedicineDetails.value = false
+  }
+}
+
+const openDispensedDetails = async () => {
+  showDispensedModal.value = true
+  loadingDispensedDetails.value = true
+  dispensedDetails.value = []
+  dispensedPersonSummary.value = []
+
+  try {
+    const { data, error } = await supabase
+      .from('dispensing_records')
+      .select('id, amount, created_at, medicine:medicine_list(name), checkup:checkups(employees(employee_code, fullname, department))')
+      .gte('created_at', currentStartDate.toISOString())
+      .lte('created_at', currentEndDate.toISOString())
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    const rows = data || []
+    dispensedDetails.value = rows.map(r => ({
+      ...r,
+      medicineName: r.medicine?.name || '-',
+      fullname: r.checkup?.employees?.fullname || '-',
+      employee_code: r.checkup?.employees?.employee_code || '-',
+      department: r.checkup?.employees?.department || '-'
+    }))
+
+    const personMap = {}
+    rows.forEach(r => {
+      const code = r.checkup?.employees?.employee_code || 'unknown'
+      const name = r.checkup?.employees?.fullname || '-'
+      if (!personMap[code]) personMap[code] = { name, total: 0 }
+      personMap[code].total += (r.amount || 0)
+    })
+    dispensedPersonSummary.value = Object.entries(personMap)
+      .map(([code, p]) => ({ code, name: p.name, total: p.total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10)
+
+  } catch (err) {
+    console.error('Fetch dispensed details failed', err)
+  } finally {
+    loadingDispensedDetails.value = false
+  }
+}
+
 const captureChart = async (chartRefId, dataRef, type, options) => {
   try {
     const cvs = document.createElement('canvas')
@@ -882,7 +1141,7 @@ const exportDashboardPdf = async () => {
     </div>
 
     <!-- Summary Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 relative z-10">
       <!-- Patients -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
         <div class="flex items-center justify-between">
@@ -920,10 +1179,13 @@ const exportDashboardPdf = async () => {
       </div>
 
       <!-- Top Department -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+      <div 
+        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 transition-colors group"
+        @click="openDeptDetails(summary.topDepartment.name)"
+      >
         <div class="flex items-center justify-between">
           <span class="text-xs text-slate-500 font-medium text-nowrap">แผนกสูงสุด</span>
-          <div class="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+          <div class="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
             <i class="fa-solid fa-building-user text-emerald-600 dark:text-emerald-400 text-sm"></i>
           </div>
         </div>
@@ -946,10 +1208,13 @@ const exportDashboardPdf = async () => {
       </div>
 
       <!-- Top Diagnosis -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+      <div 
+        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all group relative z-30 pointer-events-auto"
+        @click="openDiagDetails(summary.topDiagnosis.name)"
+      >
         <div class="flex items-center justify-between">
           <span class="text-xs text-slate-500 font-medium text-nowrap">โรคที่พบบ่อย</span>
-          <div class="w-8 h-8 rounded-full bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center shrink-0">
+          <div class="w-8 h-8 rounded-full bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
             <i class="fa-solid fa-virus text-rose-600 dark:text-rose-400 text-sm"></i>
           </div>
         </div>
@@ -972,10 +1237,13 @@ const exportDashboardPdf = async () => {
       </div>
 
       <!-- Dispensed -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+      <div 
+        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all group relative z-30 pointer-events-auto"
+        @click="openDispensedDetails"
+      >
         <div class="flex items-center justify-between">
           <span class="text-xs text-slate-500 font-medium text-nowrap">ยาที่จ่าย ({{ dateRangeLabel }})</span>
-          <div class="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center shrink-0">
+          <div class="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
             <i class="fa-solid fa-prescription-bottle-medical text-orange-600 dark:text-orange-400 text-sm"></i>
           </div>
         </div>
@@ -1051,13 +1319,14 @@ const exportDashboardPdf = async () => {
           <div
             v-for="(row, i) in topDiagnoses.slice(0, 7)"
             :key="row.diagnosis"
-            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50"
+            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50 cursor-pointer hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors group"
+            @click="openDiagDetails(row.diagnosis)"
           >
             <div class="flex items-center gap-1.5 overflow-hidden">
-              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm">
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm group-hover:text-rose-600 transition-colors">
                 {{ i + 1 }}
               </span>
-              <span class="truncate font-medium text-slate-700 dark:text-slate-200" :title="row.diagnosis">{{ row.diagnosis }}</span>
+              <span class="truncate font-medium text-slate-700 dark:text-slate-200 group-hover:text-rose-600 transition-colors" :title="row.diagnosis">{{ row.diagnosis }}</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <span class="font-bold text-slate-900 dark:text-white">{{ row.count }}</span>
@@ -1082,13 +1351,14 @@ const exportDashboardPdf = async () => {
           <div
             v-for="(row, i) in medicineStats.slice(0, 7)"
             :key="row.name"
-            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50"
+            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors group"
+            @click="openMedicineDetails(row.name)"
           >
             <div class="flex items-center gap-1.5 overflow-hidden">
-              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm">
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm group-hover:text-indigo-600 transition-colors">
                 {{ i + 1 }}
               </span>
-              <span class="truncate font-medium text-slate-700 dark:text-slate-200" :title="row.name">{{ row.name }}</span>
+              <span class="truncate font-medium text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 transition-colors" :title="row.name">{{ row.name }}</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <span class="font-bold text-slate-900 dark:text-white">{{ row.dispensedCount }}</span>
@@ -1118,13 +1388,14 @@ const exportDashboardPdf = async () => {
           <div
             v-for="(row, i) in departmentStats.slice(deptPageIndex * 7, (deptPageIndex + 1) * 7)"
             :key="row.department"
-            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50"
+            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50 cursor-pointer hover:bg-clinic-blue/10 dark:hover:bg-clinic-blue/20 transition-colors group"
+            @click="openDeptDetails(row.department)"
           >
             <div class="flex items-center gap-1.5 overflow-hidden">
-              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm">
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm group-hover:text-clinic-blue transition-colors">
                 {{ deptPageIndex * 7 + i + 1 }}
               </span>
-              <span class="truncate font-medium text-slate-700 dark:text-slate-200" :title="row.department">{{ row.department }}</span>
+              <span class="truncate font-medium text-slate-700 dark:text-slate-200 group-hover:text-clinic-blue transition-colors" :title="row.department">{{ row.department }}</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <span class="font-bold text-slate-900 dark:text-white">{{ row.patientCount }}</span>
@@ -1154,13 +1425,14 @@ const exportDashboardPdf = async () => {
           <div
             v-for="(row, i) in leaveStats.slice(leavePageIndex * 7, (leavePageIndex + 1) * 7)"
             :key="row.department"
-            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50"
+            class="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 dark:bg-slate-700/50 cursor-pointer hover:bg-clinic-blue/10 dark:hover:bg-clinic-blue/20 transition-colors group"
+            @click="openLeaveDetails(row.department)"
           >
             <div class="flex items-center gap-1.5 overflow-hidden">
-              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm">
+              <span class="w-4 h-4 flex items-center justify-center rounded-full bg-white dark:bg-slate-600 text-slate-500 font-bold text-[9px] shadow-sm group-hover:text-clinic-blue transition-colors">
                 {{ leavePageIndex * 7 + i + 1 }}
               </span>
-              <span class="truncate font-medium text-slate-700 dark:text-slate-200" :title="row.department">{{ row.department }}</span>
+              <span class="truncate font-medium text-slate-700 dark:text-slate-200 group-hover:text-clinic-blue transition-colors" :title="row.department">{{ row.department }}</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <span class="font-bold text-slate-900 dark:text-white">{{ row.leaveCount }}</span>
@@ -1218,6 +1490,480 @@ const exportDashboardPdf = async () => {
         </table>
       </div>
     </div>
+
+    <!-- Modals -->
+    <Teleport to="body">
+      <!-- Dept Details Modal -->
+      <div v-if="showDeptModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="showDeptModal = false"></div>
+        <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-clinic-border dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/20">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 dark:text-white">รายละเอียดแผนก: {{ selectedDept }}</h3>
+              <p class="text-xs text-slate-500 mt-0.5">ช่วงเวลา: {{ dateRangeLabel }}</p>
+            </div>
+            <button @click="showDeptModal = false" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+              <i class="fa-solid fa-xmark text-slate-500"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <div v-if="loadingDeptDetails" class="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
+              <i class="fa-solid fa-circle-notch fa-spin text-3xl text-clinic-blue"></i>
+              <p class="text-sm font-medium">กำลังโหลดข้อมูล...</p>
+            </div>
+            <template v-else>
+              <!-- Diagnosis Summary -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white dark:bg-slate-900/40 border border-clinic-border dark:border-slate-700 rounded-xl p-4">
+                  <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-pie text-clinic-blue"></i>
+                    สรุปอาการ/การวินิจฉัย
+                  </h4>
+                  <div class="space-y-2">
+                    <div v-for="item in diagnosisSummary" :key="item.name" class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                      <span class="text-xs text-slate-600 dark:text-slate-300 font-medium">{{ item.name }}</span>
+                      <span class="text-xs font-bold text-clinic-blue">{{ item.count }} คน</span>
+                    </div>
+                    <div v-if="!diagnosisSummary.length" class="text-center py-4 text-xs text-slate-400">ไม่พบข้อมูลการวินิจฉัย</div>
+                  </div>
+                </div>
+                
+                <div class="flex flex-col justify-center items-center p-6 bg-clinic-blue/5 dark:bg-clinic-blue/10 rounded-xl border border-clinic-blue/20">
+                  <div class="text-3xl font-black text-clinic-blue mb-1">{{ deptDetails.length }}</div>
+                  <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">จำนวนผู้ป่วยทั้งหมดในแผนก</div>
+                </div>
+              </div>
+
+              <!-- Detailed Table -->
+              <div class="space-y-3">
+                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <i class="fa-solid fa-list-ul text-clinic-blue"></i>
+                  รายชื่อผู้เข้ารับการรักษา
+                </h4>
+                <div class="overflow-x-auto border border-clinic-border dark:border-slate-700 rounded-xl shadow-sm">
+                  <table class="min-w-full text-xs">
+                    <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                      <tr>
+                        <th class="py-3 px-4 text-left font-semibold">เวลา</th>
+                        <th class="py-3 px-4 text-left font-semibold">รหัสพนักงาน</th>
+                        <th class="py-3 px-4 text-left font-semibold">ชื่อ-นามสกุล</th>
+                        <th class="py-3 px-4 text-left font-semibold">อาการ/วินิจฉัย</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-clinic-border/60 dark:divide-slate-700">
+                      <tr v-for="row in deptDetails" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                        <td class="py-3 px-4 text-slate-500">
+                          {{ new Date(row.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }}
+                        </td>
+                        <td class="py-3 px-4 font-mono text-slate-500">{{ row.employee_code }}</td>
+                        <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
+                        <td class="py-3 px-4">
+                          <span class="px-2 py-1 rounded-md bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 font-medium">
+                            {{ row.diagnosis }}
+                          </span>
+                        </td>
+                      </tr>
+                      <tr v-if="!deptDetails.length">
+                        <td colspan="4" class="py-10 text-center text-slate-400 italic">ไม่พบข้อมูลรายละเอียด</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-clinic-border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/20 text-right">
+            <button @click="showDeptModal = false" class="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Medicine Details Modal -->
+      <div v-if="showMedicineModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="showMedicineModal = false"></div>
+        <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-clinic-border dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/20">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 dark:text-white">รายละเอียดตัวยา: {{ selectedMedicineName }}</h3>
+              <p class="text-xs text-slate-500 mt-0.5">ช่วงเวลา: {{ dateRangeLabel }}</p>
+            </div>
+            <button @click="showMedicineModal = false" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+              <i class="fa-solid fa-xmark text-slate-500"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <div v-if="loadingMedicineDetails" class="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
+              <i class="fa-solid fa-circle-notch fa-spin text-3xl text-clinic-blue"></i>
+              <p class="text-sm font-medium">กำลังโหลดข้อมูล...</p>
+            </div>
+            <template v-else>
+              <!-- Summary Grid -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white dark:bg-slate-900/40 border border-clinic-border dark:border-slate-700 rounded-xl p-4">
+                  <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-trophy text-indigo-500"></i>
+                    ผู้ที่ได้รับยานี้มากที่สุด (Top 10)
+                  </h4>
+                  <div class="space-y-2">
+                    <div v-for="item in medicinePersonSummary" :key="item.code" class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                      <div class="flex flex-col">
+                        <span class="text-xs text-slate-900 dark:text-slate-100 font-bold">{{ item.name }}</span>
+                        <span class="text-[10px] text-slate-500 font-mono">{{ item.code }}</span>
+                      </div>
+                      <span class="text-xs font-bold text-indigo-600">{{ item.total }} หน่วย</span>
+                    </div>
+                    <div v-if="!medicinePersonSummary.length" class="text-center py-4 text-xs text-slate-400">ไม่พบข้อมูล</div>
+                  </div>
+                </div>
+                
+                <div class="flex flex-col justify-center items-center p-6 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-200 dark:border-indigo-800/50">
+                  <div class="text-3xl font-black text-indigo-600 mb-1">
+                    {{ medicineDetails.reduce((acc, curr) => acc + (curr.amount || 0), 0) }}
+                  </div>
+                  <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">จำนวนหน่วยยารวมที่จ่าย</div>
+                </div>
+              </div>
+
+              <!-- Detailed Table -->
+              <div class="space-y-3">
+                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <i class="fa-solid fa-receipt text-indigo-500"></i>
+                  ประวัติการจ่ายยานี้
+                </h4>
+                <div class="overflow-x-auto border border-clinic-border dark:border-slate-700 rounded-xl shadow-sm">
+                  <table class="min-w-full text-xs">
+                    <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                      <tr>
+                        <th class="py-3 px-4 text-left font-semibold">เวลา</th>
+                        <th class="py-3 px-4 text-left font-semibold">ชื่อ-นามสกุล</th>
+                        <th class="py-3 px-4 text-left font-semibold">แผนก</th>
+                        <th class="py-3 px-4 text-left font-semibold">อาการ/วินิจฉัย</th>
+                        <th class="py-3 px-4 text-right font-semibold">จำนวน</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-clinic-border/60 dark:divide-slate-700">
+                      <tr v-for="row in medicineDetails" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                        <td class="py-3 px-4 text-slate-500">
+                          {{ new Date(row.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }}
+                        </td>
+                        <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
+                        <td class="py-3 px-4 text-slate-500">{{ row.department }}</td>
+                        <td class="py-3 px-4">
+                          <span class="px-2 py-1 rounded-md bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 font-medium">
+                            {{ row.diagnosis }}
+                          </span>
+                        </td>
+                        <td class="py-3 px-4 text-right font-bold text-slate-900 dark:text-white">
+                          {{ row.amount }}
+                        </td>
+                      </tr>
+                      <tr v-if="!medicineDetails.length">
+                        <td colspan="5" class="py-10 text-center text-slate-400 italic">ไม่พบข้อมูลรายละเอียด</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-clinic-border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/20 text-right">
+            <button @click="showMedicineModal = false" class="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Diag Details Modal -->
+      <div v-if="showDiagModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="showDiagModal = false"></div>
+        <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-clinic-border dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/20">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 dark:text-white">รายละเอียดโรค: {{ selectedDiagName }}</h3>
+              <p class="text-xs text-slate-500 mt-0.5">ช่วงเวลา: {{ dateRangeLabel }}</p>
+            </div>
+            <button @click="showDiagModal = false" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+              <i class="fa-solid fa-xmark text-slate-500"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <div v-if="loadingDiagDetails" class="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
+              <i class="fa-solid fa-circle-notch fa-spin text-3xl text-clinic-blue"></i>
+              <p class="text-sm font-medium">กำลังโหลดข้อมูล...</p>
+            </div>
+            <template v-else>
+              <!-- Summary Grid -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white dark:bg-slate-900/40 border border-clinic-border dark:border-slate-700 rounded-xl p-4">
+                  <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-building text-emerald-500"></i>
+                    แยกตามแผนก
+                  </h4>
+                  <div class="space-y-2">
+                    <div v-for="item in diagDeptSummary" :key="item.name" class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                      <span class="text-xs text-slate-600 dark:text-slate-300 font-medium">{{ item.name }}</span>
+                      <span class="text-xs font-bold text-emerald-600">{{ item.count }} คน</span>
+                    </div>
+                    <div v-if="!diagDeptSummary.length" class="text-center py-4 text-xs text-slate-400">ไม่พบข้อมูลแผนก</div>
+                  </div>
+                </div>
+                
+                <div class="flex flex-col justify-center items-center p-6 bg-rose-50 dark:bg-rose-900/10 rounded-xl border border-rose-200 dark:border-rose-800/50">
+                  <div class="text-3xl font-black text-rose-600 mb-1">{{ diagDetails.length }}</div>
+                  <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">พนักงานที่เป็นโรคนี้ทั้งหมด</div>
+                </div>
+              </div>
+
+              <!-- Detailed Table -->
+              <div class="space-y-3">
+                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <i class="fa-solid fa-users text-rose-500"></i>
+                  รายชื่อพนักงานที่เป็นโรคนี้
+                </h4>
+                <div class="overflow-x-auto border border-clinic-border dark:border-slate-700 rounded-xl shadow-sm">
+                  <table class="min-w-full text-xs">
+                    <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                      <tr>
+                        <th class="py-3 px-4 text-left font-semibold">เวลา</th>
+                        <th class="py-3 px-4 text-left font-semibold">รหัสพนักงาน</th>
+                        <th class="py-3 px-4 text-left font-semibold">ชื่อ-นามสกุล</th>
+                        <th class="py-3 px-4 text-left font-semibold">แผนก</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-clinic-border/60 dark:divide-slate-700">
+                      <tr v-for="row in diagDetails" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                        <td class="py-3 px-4 text-slate-500">
+                          {{ new Date(row.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }}
+                        </td>
+                        <td class="py-3 px-4 font-mono text-slate-500">{{ row.employee_code }}</td>
+                        <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
+                        <td class="py-3 px-4 text-slate-500">{{ row.department }}</td>
+                      </tr>
+                      <tr v-if="!diagDetails.length">
+                        <td colspan="4" class="py-10 text-center text-slate-400 italic">ไม่พบข้อมูลรายละเอียด</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-clinic-border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/20 text-right">
+            <button @click="showDiagModal = false" class="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dispensed Details Modal -->
+      <div v-if="showDispensedModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="showDispensedModal = false"></div>
+        <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-clinic-border dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/20">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 dark:text-white">รายละเอียดการจ่ายยา</h3>
+              <p class="text-xs text-slate-500 mt-0.5">ช่วงเวลา: {{ dateRangeLabel }}</p>
+            </div>
+            <button @click="showDispensedModal = false" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+              <i class="fa-solid fa-xmark text-slate-500"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <div v-if="loadingDispensedDetails" class="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
+              <i class="fa-solid fa-circle-notch fa-spin text-3xl text-clinic-blue"></i>
+              <p class="text-sm font-medium">กำลังโหลดข้อมูล...</p>
+            </div>
+            <template v-else>
+              <!-- Summary Grid -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white dark:bg-slate-900/40 border border-clinic-border dark:border-slate-700 rounded-xl p-4">
+                  <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-trophy text-orange-500"></i>
+                    ผู้ที่ได้รับยามากที่สุด (Top 10)
+                  </h4>
+                  <div class="space-y-2">
+                    <div v-for="item in dispensedPersonSummary" :key="item.code" class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                      <div class="flex flex-col">
+                        <span class="text-xs text-slate-900 dark:text-slate-100 font-bold">{{ item.name }}</span>
+                        <span class="text-[10px] text-slate-500 font-mono">{{ item.code }}</span>
+                      </div>
+                      <span class="text-xs font-bold text-orange-600">{{ item.total }} หน่วย</span>
+                    </div>
+                    <div v-if="!dispensedPersonSummary.length" class="text-center py-4 text-xs text-slate-400">ไม่พบข้อมูล</div>
+                  </div>
+                </div>
+                
+                <div class="flex flex-col justify-center items-center p-6 bg-orange-50 dark:bg-orange-900/10 rounded-xl border border-orange-200 dark:border-orange-800/50">
+                  <div class="text-3xl font-black text-orange-600 mb-1">{{ summary.dispensedThisMonth.value }}</div>
+                  <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">จำนวนหน่วยยารวมที่จ่าย</div>
+                </div>
+              </div>
+
+              <!-- Detailed Table -->
+              <div class="space-y-3">
+                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <i class="fa-solid fa-receipt text-orange-500"></i>
+                  รายการการจ่ายยาทั้งหมด
+                </h4>
+                <div class="overflow-x-auto border border-clinic-border dark:border-slate-700 rounded-xl shadow-sm">
+                  <table class="min-w-full text-xs">
+                    <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                      <tr>
+                        <th class="py-3 px-4 text-left font-semibold">เวลา</th>
+                        <th class="py-3 px-4 text-left font-semibold">ชื่อ-นามสกุล</th>
+                        <th class="py-3 px-4 text-left font-semibold">แผนก</th>
+                        <th class="py-3 px-4 text-left font-semibold">ยาที่ได้รับ</th>
+                        <th class="py-3 px-4 text-right font-semibold">จำนวน</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-clinic-border/60 dark:divide-slate-700">
+                      <tr v-for="row in dispensedDetails" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                        <td class="py-3 px-4 text-slate-500">
+                          {{ new Date(row.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }}
+                        </td>
+                        <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
+                        <td class="py-3 px-4 text-slate-500">{{ row.department }}</td>
+                        <td class="py-3 px-4">
+                          <span class="px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium">
+                            {{ row.medicineName }}
+                          </span>
+                        </td>
+                        <td class="py-3 px-4 text-right font-bold text-slate-900 dark:text-white">
+                          {{ row.amount }}
+                        </td>
+                      </tr>
+                      <tr v-if="!dispensedDetails.length">
+                        <td colspan="5" class="py-10 text-center text-slate-400 italic">ไม่พบข้อมูลรายละเอียด</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-clinic-border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/20 text-right">
+            <button @click="showDispensedModal = false" class="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leave Details Modal -->
+      <div v-if="showLeaveModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="showLeaveModal = false"></div>
+        <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-clinic-border dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/20">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 dark:text-white">รายละเอียดการลาพัก: {{ selectedLeaveDept }}</h3>
+              <p class="text-xs text-slate-500 mt-0.5">ช่วงเวลา: {{ dateRangeLabel }}</p>
+            </div>
+            <button @click="showLeaveModal = false" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+              <i class="fa-solid fa-xmark text-slate-500"></i>
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <div v-if="loadingLeaveDetails" class="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
+              <i class="fa-solid fa-circle-notch fa-spin text-3xl text-clinic-blue"></i>
+              <p class="text-sm font-medium">กำลังโหลดข้อมูล...</p>
+            </div>
+            <template v-else>
+              <div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-xl p-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                    <i class="fa-solid fa-calendar-xmark text-lg"></i>
+                  </div>
+                  <div>
+                    <div class="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">การลาพักรวม</div>
+                    <div class="text-sm text-amber-600 dark:text-amber-400 font-medium">ในแผนก {{ selectedLeaveDept }} ช่วง {{ dateRangeLabel }}</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-2xl font-black text-amber-600 dark:text-amber-400">{{ leaveDetails.length }}</div>
+                  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ครั้งที่ลา</div>
+                </div>
+              </div>
+
+              <!-- Detailed Table -->
+              <div class="space-y-3">
+                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <i class="fa-solid fa-users-rectangle text-amber-500"></i>
+                  รายชื่อผู้ลาพักและช่วงเวลา
+                </h4>
+                <div class="overflow-x-auto border border-clinic-border dark:border-slate-700 rounded-xl shadow-sm">
+                  <table class="min-w-full text-xs">
+                    <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                      <tr>
+                        <th class="py-3 px-4 text-left font-semibold">บันทึกเมื่อ</th>
+                        <th class="py-3 px-4 text-left font-semibold">รหัสพนักงาน</th>
+                        <th class="py-3 px-4 text-left font-semibold">ชื่อ-นามสกุล</th>
+                        <th class="py-3 px-4 text-left font-semibold">ช่วงวันที่ลาพัก</th>
+                        <th class="py-3 px-4 text-right font-semibold">รวมจำนวนวัน</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-clinic-border/60 dark:divide-slate-700">
+                      <tr v-for="row in leaveDetails" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                        <td class="py-3 px-4 text-slate-500">
+                          {{ new Date(row.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }}
+                        </td>
+                        <td class="py-3 px-4 font-mono text-slate-500">{{ row.employee_code }}</td>
+                        <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
+                        <td class="py-3 px-4">
+                          <span class="px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 font-medium">
+                            {{ row.period }}
+                          </span>
+                        </td>
+                        <td class="py-3 px-4 text-right">
+                          <span class="font-bold text-slate-900 dark:text-white">{{ row.days }}</span>
+                          <span class="ml-1 text-slate-400">วัน</span>
+                        </td>
+                      </tr>
+                      <tr v-if="!leaveDetails.length">
+                        <td colspan="5" class="py-10 text-center text-slate-400 italic">ไม่พบข้อมูลการลาพัก</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-clinic-border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/20 text-right">
+            <button @click="showLeaveModal = false" class="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+              ปิดหน้าต่าง
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 

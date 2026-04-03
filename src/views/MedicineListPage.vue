@@ -471,7 +471,15 @@ onMounted(loadMedicines)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="m in medicines" :key="m.id" class="border-b border-clinic-border/60 dark:border-slate-800">
+          <tr v-if="loading">
+            <td colspan="10" class="py-8 text-center">
+              <div class="flex flex-col items-center gap-2">
+                <i class="fa-solid fa-circle-notch fa-spin text-2xl text-clinic-blue dark:text-blue-200"></i>
+                <span class="text-slate-500 animate-pulse">กำลังโหลดข้อมูล...</span>
+              </div>
+            </td>
+          </tr>
+          <tr v-else v-for="m in medicines" :key="m.id" class="border-b border-clinic-border/60 dark:border-slate-800">
             <td class="py-1.5 pr-3 text-slate-400">{{ m.sku || '-' }}</td>
             <td class="py-1.5 pr-3 font-medium">{{ m.name }}</td>
             <td class="py-1.5 pr-3">
@@ -493,6 +501,11 @@ onMounted(loadMedicines)
                 <i class="fa-solid fa-pen-to-square text-[10px]"></i>
                 แก้ไข
               </button>
+            </td>
+          </tr>
+          <tr v-if="!loading && !medicines.length">
+            <td colspan="10" class="py-8 text-center text-slate-400">
+              ไม่พบรายการยาในคลัง
             </td>
           </tr>
         </tbody>
@@ -520,7 +533,15 @@ onMounted(loadMedicines)
               </tr>
             </thead>
             <tbody class="divide-y">
-              <tr v-for="item in pendingImports" :key="item.id">
+              <tr v-if="loading">
+                <td colspan="10" class="py-8 text-center">
+                  <div class="flex flex-col items-center gap-2">
+                    <i class="fa-solid fa-circle-notch fa-spin text-2xl text-clinic-blue dark:text-blue-200"></i>
+                    <span class="text-slate-500 animate-pulse">กำลังโหลดข้อมูล...</span>
+                  </div>
+                </td>
+              </tr>
+              <tr v-else v-for="item in pendingImports" :key="item.id">
                 <td class="py-3 text-slate-600 dark:text-slate-300 text-[12px]">{{ new Date(item.created_at).toLocaleString('th-TH') }}</td>
                 <td class="py-3">
                   <div class="font-medium text-slate-900 dark:text-white">
@@ -545,7 +566,7 @@ onMounted(loadMedicines)
                   <button @click="openApprovalSidebar(item)" class="text-amber-600 dark:text-amber-400 hover:underline font-medium text-[12px]">กดเพื่ออนุมัติ</button>
                 </td>
               </tr>
-              <tr v-if="!pendingImports.length">
+              <tr v-if="!loading && !pendingImports.length">
                 <td colspan="7" class="py-8 text-center text-slate-400">ไม่มีรายการรอตรวจสอบ</td>
               </tr>
             </tbody>
