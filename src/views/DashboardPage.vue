@@ -655,7 +655,7 @@ const openLeaveDetails = async (dept) => {
   try {
     const { data, error } = await supabase
       .from('checkups')
-      .select('id, created_at, leave_start, leave_end, total_leave_days, employees!inner(employee_code, fullname, department)')
+      .select('id, created_at, diagnosis, leave_start, leave_end, total_leave_days, employees!inner(employee_code, fullname, department)')
       .eq('employees.department', dept)
       .eq('is_leave_allowed', true)
       .gte('created_at', currentStartDate.toISOString())
@@ -668,6 +668,7 @@ const openLeaveDetails = async (dept) => {
       ...r,
       fullname: r.employees?.fullname || '-',
       employee_code: r.employees?.employee_code || '-',
+      diagnosis: r.diagnosis || '-',
       period: `${new Date(r.leave_start).toLocaleDateString('th-TH')} - ${new Date(r.leave_end).toLocaleDateString('th-TH')}`,
       days: r.total_leave_days || 0
     }))
@@ -1924,6 +1925,7 @@ const exportDashboardPdf = async () => {
                         <th class="py-3 px-4 text-left font-semibold">บันทึกเมื่อ</th>
                         <th class="py-3 px-4 text-left font-semibold">รหัสพนักงาน</th>
                         <th class="py-3 px-4 text-left font-semibold">ชื่อ-นามสกุล</th>
+                        <th class="py-3 px-4 text-left font-semibold">อาการ</th>
                         <th class="py-3 px-4 text-left font-semibold">ช่วงวันที่ลาพัก</th>
                         <th class="py-3 px-4 text-right font-semibold">รวมจำนวนวัน</th>
                       </tr>
@@ -1935,6 +1937,9 @@ const exportDashboardPdf = async () => {
                         </td>
                         <td class="py-3 px-4 font-mono text-slate-500">{{ row.employee_code }}</td>
                         <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
+                        <td class="py-3 px-4 "><span class="px-2 py-1 rounded-md bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 font-medium">
+                            {{ row.diagnosis }}
+                          </span></td>
                         <td class="py-3 px-4">
                           <span class="px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 font-medium">
                             {{ row.period }}
