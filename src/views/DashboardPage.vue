@@ -1920,23 +1920,23 @@ const exportDashboardPdf = async () => {
                 </h4>
                 <div class="overflow-x-auto border border-clinic-border dark:border-slate-700 rounded-xl shadow-sm">
                   <table class="min-w-full text-xs">
-                    <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-clinic-border dark:border-slate-700">
+                    <thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-clinic-border dark:border-slate-700 text-center">
                       <tr>
-                        <th class="py-3 px-4 text-left font-semibold">บันทึกเมื่อ</th>
-                        <th class="py-3 px-4 text-left font-semibold">รหัสพนักงาน</th>
-                        <th class="py-3 px-4 text-left font-semibold">ชื่อ-นามสกุล</th>
-                        <th class="py-3 px-4 text-left font-semibold">อาการ</th>
-                        <th class="py-3 px-4 text-left font-semibold">ช่วงวันที่ลาพัก</th>
-                        <th class="py-3 px-4 text-right font-semibold">รวมจำนวนวัน</th>
+                        <th class="py-3 px-4 font-semibold">บันทึกเมื่อ</th>
+                        <!-- <th class="py-3 left font-semibold">รหัสพนักงาน</th> -->
+                        <th class="py-3 px-4 font-semibold">ชื่อ-นามสกุล</th>
+                        <th class="py-3 px-4 font-semibold">อาการ</th>
+                        <th class="py-3 px-4 font-semibold">ช่วงวันที่ลาพัก</th>
+                        <th class="py-3 px-4 font-semibold">รวมจำนวนวัน</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-clinic-border/60 dark:divide-slate-700">
-                      <tr v-for="row in leaveDetails" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                      <tr v-for="row in leaveDetails" :key="row.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors text-center">
                         <td class="py-3 px-4 text-slate-500">
                           {{ new Date(row.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) }}
                         </td>
-                        <td class="py-3 px-4 font-mono text-slate-500">{{ row.employee_code }}</td>
-                        <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }}</td>
+                        <!-- <td class="py-3 px-4 font-mono text-slate-500">{{ row.employee_code }}</td> -->
+                        <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">{{ row.fullname }} <br> <span class="px-1 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[11px]">{{ row.employee_code }}</span></td>
                         <td class="py-3 px-4 "><span class="px-2 py-1 rounded-md bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 font-medium">
                             {{ row.diagnosis }}
                           </span></td>
@@ -1945,7 +1945,7 @@ const exportDashboardPdf = async () => {
                             {{ row.period }}
                           </span>
                         </td>
-                        <td class="py-3 px-4 text-right">
+                        <td class="py-3 px-4">
                           <span class="font-bold text-slate-900 dark:text-white">{{ row.days }}</span>
                           <span class="ml-1 text-slate-400">วัน</span>
                         </td>
