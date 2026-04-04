@@ -41,6 +41,8 @@ const pendingImports = ref([])
 const pendingCount = ref(0)
 const showApprovalSidebar = ref(false)
 const selectedImport = ref(null)
+const showExportModal = ref(false)
+const exportingExcel = ref(false)
 
 // Action State
 const actionStatus = ref('') // 'approving' | 'rejecting'
@@ -104,6 +106,122 @@ const saveEdit = async () => {
     showToast('error', 'บันทึกไม่สำเร็จ')
   } finally {
     loading.value = false
+  }
+}
+
+const ensureXlsx = async () => {
+  if (window.XLSX) return window.XLSX
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script')
+    s.src = 'https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js'
+    s.onload = () => resolve(window.XLSX)
+    s.onerror = reject
+    document.head.appendChild(s)
+  })
+}
+
+const openExportModal = () => {
+  showExportModal.value = true
+}
+
+const closeExportModal = () => {
+  if (exportingExcel.value) return
+  showExportModal.value = false
+}
+
+const exportMedicineExcel = async (type) => {
+  const exportConfig = {
+    general: {
+      label: 'ยาทั่วไป',
+      fileSuffix: 'general_medicines',
+      group: 'ยาทั่วไป',
+    },
+    device: {
+      label: 'เครื่องมือแพทย์',
+      fileSuffix: 'medical_devices',
+      group: 'เครื่องมือแพทย์',
+    },
+    all: {
+      label: 'ทั้งหมด',
+      fileSuffix: 'all_items',
+      group: '',
+    },
+  }[type]
+
+  if (!exportConfig) return
+
+  exportingExcel.value = true
+  try {
+    const XLSX = await ensureXlsx()
+
+    let query = supabase
+      .from('medicine_list')
+      .select('sku, name, current_stock, unit, group, indication, side_effect')
+      .order('name', { ascending: true })
+
+    if (exportConfig.group) {
+      query = query.eq('group', exportConfig.group)
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+
+    const rows = data || []
+    if (!rows.length) {
+      showToast('error', `ไม่พบข้อมูลสำหรับส่งออกประเภท${exportConfig.label}`)
+      return
+    }
+
+    const headerRow = [
+      'No',
+      'เลข SKU',
+      'ชื่อยา',
+      'จำนวนคงเหลือปัจจุบัน',
+      'หน่วย (unit)',
+      'ประเภท',
+      'สรรพคุณ',
+      'ผลข้างเคียง',
+    ]
+
+    const dataRows = rows.map((item, index) => ([
+      index + 1,
+      item.sku || '-',
+      item.name || '-',
+      Number(item.current_stock || 0),
+      item.unit || '-',
+      item.group || '-',
+      item.indication || '-',
+      item.side_effect || '-',
+    ]))
+
+    const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows])
+    ws['!cols'] = [
+      { wch: 8 },
+      { wch: 18 },
+      { wch: 32 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 36 },
+      { wch: 36 },
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Medicine List')
+
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm = String(now.getMonth() + 1).padStart(2, '0')
+    const dd = String(now.getDate()).padStart(2, '0')
+    XLSX.writeFile(wb, `medicine_list_${exportConfig.fileSuffix}_${yyyy}${mm}${dd}.xlsx`)
+
+    showExportModal.value = false
+    showToast('success', `ส่งออกข้อมูล${exportConfig.label}สำเร็จ`)
+  } catch (err) {
+    console.error('Export medicine excel error', err)
+    showToast('error', 'เกิดข้อผิดพลาดในการส่งออก Excel')
+  } finally {
+    exportingExcel.value = false
   }
 }
 
@@ -436,7 +554,7 @@ onMounted(loadMedicines)
     </div>
 
     <!-- Controls -->
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
       <input v-model="search" type="text" placeholder="ค้นหา..." class="flex-1 rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs" />
       <select v-model="unitFilter" class="rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs">
         <option value="">ประเภททั้งหมด</option>
@@ -446,6 +564,15 @@ onMounted(loadMedicines)
         <option value="">กลุ่มทั้งหมด</option>
         <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
       </select>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+        :disabled="exportingExcel"
+        @click="openExportModal"
+      >
+        <i class="fa-solid fa-file-excel"></i>
+        <span>{{ exportingExcel ? 'กำลังส่งออก...' : 'ส่งออก Excel' }}</span>
+      </button>
     </div>
 
     <!-- Table -->
@@ -457,7 +584,7 @@ onMounted(loadMedicines)
       </div>
       <table class="min-w-full text-xs">
         <thead>
-          <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
+          <tr class="text-left text-slate-500 dark:text-slate-400 border-b border-clinic-border dark:border-slate-700">
             <th class="py-2 pr-3">SKU</th>
             <th class="py-2 pr-3">ชื่อ</th>
             <th class="py-2 pr-3">คงเหลือปัจจุบัน</th>
@@ -487,12 +614,12 @@ onMounted(loadMedicines)
                 {{ m.current_stock }} {{ m.unit }}
               </span>
             </td>
-            <td class="py-1.5 pr-3 text-slate-500">{{ m.group || '-' }}</td>
-            <td class="py-1.5 pr-3 text-slate-500">{{ m.indication || '-' }}</td>
-            <td class="py-1.5 pr-3 text-slate-500">{{ m.side_effect || '-' }}</td>
-            <td class="py-1.5 pr-3 text-slate-500">{{ m.creator?.full_name || '-' }}</td>
-            <td class="py-1.5 pr-3 text-slate-500">{{ m.updater?.full_name || '-' }}</td>
-            <td class="py-1.5 pr-3 text-slate-500">{{ m.updated_at ? new Date(m.updated_at).toLocaleString('en-UK') : '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.group || '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.indication || '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.side_effect || '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.creator?.full_name || '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.updater?.full_name || '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.updated_at ? new Date(m.updated_at).toLocaleString('en-UK') : '-' }}</td>
             <td class="py-1.5 pr-3 text-right" v-if="!isAdmin">
               <button
                 @click="openEditSidebar(m)"
@@ -510,6 +637,64 @@ onMounted(loadMedicines)
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Export Modal -->
+    <div v-if="showExportModal" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" @click.self="closeExportModal">
+      <div class="w-full max-w-xl rounded-2xl bg-white shadow-2xl dark:bg-slate-900 overflow-hidden border-1 border-slate-300 dark:border-slate-700 rounded-xl">
+        <div class="flex items-center justify-between border-b border-clinic-border dark:border-slate-700 p-4">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">ส่งออกข้อมูลรายการยา</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">เลือกประเภทข้อมูลที่ต้องการส่งออกเป็นไฟล์ Excel</p>
+          </div>
+          <button @click="closeExportModal" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" :disabled="exportingExcel">
+            <i class="fa-solid fa-times"></i>
+          </button>
+        </div>
+
+        <div class="grid gap-3 p-4 md:grid-cols-3">
+          <button
+            type="button"
+            class="rounded-xl border border-clinic-border dark:border-slate-700 p-4 text-left transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-800 disabled:opacity-50"
+            :disabled="exportingExcel"
+            @click="exportMedicineExcel('general')"
+          >
+            <div class="text-sm font-semibold text-slate-900 dark:text-white">ยาทั้งหมด</div>
+            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">ส่งออกเฉพาะรายการที่เป็นประเภท ยาทั่วไป</div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-xl border border-clinic-border dark:border-slate-700 p-4 text-left transition-colors hover:bg-amber-50 dark:hover:bg-amber-800 disabled:opacity-50"
+            :disabled="exportingExcel"
+            @click="exportMedicineExcel('device')"
+          >
+            <div class="text-sm font-semibold text-slate-900 dark:text-white">เครื่องมือแพทย์</div>
+            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">ส่งออกเฉพาะรายการที่เป็นประเภท เครื่องมือแพทย์</div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-xl border border-clinic-border dark:border-slate-700 p-4 text-left transition-colors hover:bg-teal-50 dark:hover:bg-teal-800 disabled:opacity-50"
+            :disabled="exportingExcel"
+            @click="exportMedicineExcel('all')"
+          >
+            <div class="text-sm font-semibold text-slate-900 dark:text-white">ทั้งหมด</div>
+            <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">ส่งออกข้อมูลทุกรายการทั้งยาและเครื่องมือแพทย์</div>
+          </button>
+        </div>
+
+        <div class="flex justify-end gap-2 p-4">
+          <button
+            type="button"
+            class="rounded-lg border border-clinic-border dark:border-slate-600 px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+            :disabled="exportingExcel"
+            @click="closeExportModal"
+          >
+            ปิด
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Pending List Modal -->
