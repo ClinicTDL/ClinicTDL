@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { supabase, supabaseStorage, STORAGE_BUCKET } from '../supabaseClient'
 import { showToast, showConfirm } from '../stores/ui'
 const employeeCode = ref('')
@@ -18,6 +18,48 @@ const rr = ref('')
 const spo2 = ref('')
 const symptoms = ref('')
 const diagnosis = ref('')
+const diagnosisOptions = [
+  'Common Cold',
+  'Gastritis',
+  'Diarrhea',
+  'Pharyngitis',
+  'Headache',
+  'Menstrual Pain',
+  'Dizziness',
+  'Back Pain',
+  'Otitis Externa',
+  'Pneumonia',
+  'Menstrual Cramps',
+  'Endometritis',
+  'High Blood Pressure',
+  'Eye Inflammation',
+]
+const showDiagnosisOptions = ref(false)
+let diagnosisBlurTimer = null
+const vitalHelperConfigs = {
+  bp: {
+    title: 'BP',
+    options: ['90/60', '100/60', '110/70', '118/120', '119/79', '119/80', '120/78', '120/79', '120/80', '120/81', '130/80', '140/90'],
+  },
+  pulse: {
+    title: 'Pulse',
+    options: ['60', '67', '68', '69', '70', '71', '72', '73', '80', '90', '100', '110'],
+  },
+  rr: {
+    title: 'RR',
+    options: ['12', '13', '14', '15', '16', '17', '18', '20', '22'],
+  },
+  temp: {
+    title: 'Temp',
+    options: ['35', '36', '37', '38', '39', '40'],
+  },
+  spo2: {
+    title: 'SpO2',
+    options: ['95', '96', '97', '98', '99', '100'],
+  },
+}
+const activeVitalHelper = ref('')
+let vitalHelperBlurTimer = null
 const remark = ref('')
 const isLeaveAllowed = ref(false)
 const leaveStart = ref('')
@@ -30,8 +72,60 @@ const congenitalDiseaseText = ref('')
 
 const toTitleCaseEng = (s) =>
   (s || '').replace(/\b([A-Za-z])([A-Za-z]*)\b/g, (_, a, b) => a.toUpperCase() + b.toLowerCase())
+const filteredDiagnosisOptions = computed(() => {
+  const keyword = String(diagnosis.value || '').trim().toLowerCase()
+  if (!keyword) return diagnosisOptions
+  return diagnosisOptions.filter((option) => option.toLowerCase().includes(keyword))
+})
+const openDiagnosisOptions = () => {
+  if (diagnosisBlurTimer) {
+    clearTimeout(diagnosisBlurTimer)
+    diagnosisBlurTimer = null
+  }
+  showDiagnosisOptions.value = true
+}
+const closeDiagnosisOptions = () => {
+  diagnosisBlurTimer = setTimeout(() => {
+    showDiagnosisOptions.value = false
+    formatDiagnosisOnBlur()
+    diagnosisBlurTimer = null
+  }, 120)
+}
+const selectDiagnosisOption = (option) => {
+  if (diagnosisBlurTimer) {
+    clearTimeout(diagnosisBlurTimer)
+    diagnosisBlurTimer = null
+  }
+  diagnosis.value = option
+  showDiagnosisOptions.value = false
+}
 const formatDiagnosisOnBlur = () => {
   diagnosis.value = toTitleCaseEng(diagnosis.value || '')
+}
+const openVitalHelper = (field) => {
+  if (vitalHelperBlurTimer) {
+    clearTimeout(vitalHelperBlurTimer)
+    vitalHelperBlurTimer = null
+  }
+  activeVitalHelper.value = field
+}
+const closeVitalHelper = () => {
+  vitalHelperBlurTimer = setTimeout(() => {
+    activeVitalHelper.value = ''
+    vitalHelperBlurTimer = null
+  }, 120)
+}
+const applyVitalSuggestion = (field, value) => {
+  if (vitalHelperBlurTimer) {
+    clearTimeout(vitalHelperBlurTimer)
+    vitalHelperBlurTimer = null
+  }
+  if (field === 'bp') bp.value = value
+  if (field === 'pulse') pulse.value = value
+  if (field === 'rr') rr.value = value
+  if (field === 'temp') temp.value = value
+  if (field === 'spo2') spo2.value = value
+  activeVitalHelper.value = ''
 }
 
 const photoDataUrl = ref('')
@@ -609,8 +703,10 @@ const saveCheckup = async () => {
     pulse.value = ''
     rr.value = ''
     spo2.value = ''
+    activeVitalHelper.value = ''
     symptoms.value = ''
     diagnosis.value = ''
+    showDiagnosisOptions.value = false
     remark.value = ''
     isLeaveAllowed.value = false
     leaveStart.value = ''
@@ -789,25 +885,174 @@ watch([leaveStart, leaveEnd], () => {
         </div>
 
         <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div>
+          <div class="relative">
             <label class="block text-xs font-medium mb-1">BP (mmHg)</label>
-            <input v-model="bp" type="text" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="120/80" />
+            <input
+              v-model="bp"
+              type="text"
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              placeholder="120/80"
+              @focus="openVitalHelper('bp')"
+              @click="openVitalHelper('bp')"
+              @blur="closeVitalHelper"
+            />
+            <div
+              v-if="activeVitalHelper === 'bp'"
+              class="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 shadow-xl"
+            >
+              <div class="border-b border-clinic-border dark:border-slate-700 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400">
+                เลือกค่า {{ vitalHelperConfigs.bp.title }}
+              </div>
+              <div class="grid grid-cols-3 gap-1 p-2">
+                <button
+                  v-for="option in vitalHelperConfigs.bp.options"
+                  :key="option"
+                  type="button"
+                  class="rounded-md px-2 py-1.5 text-xs transition-colors"
+                  :class="option === bp ? 'bg-clinic-blue text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
+                  @mousedown.prevent="applyVitalSuggestion('bp', option)"
+                >
+                  {{ option }}
+                </button>
+              </div>
+            </div>
           </div>
-          <div>
+          <div class="relative">
             <label class="block text-xs font-medium mb-1">Pulse (bpm)</label>
-            <input v-model="pulse" type="number" min="30" max="250" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="72" />
+            <input
+              v-model="pulse"
+              type="number"
+              min="30"
+              max="250"
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              placeholder="72"
+              @focus="openVitalHelper('pulse')"
+              @click="openVitalHelper('pulse')"
+              @blur="closeVitalHelper"
+            />
+            <div
+              v-if="activeVitalHelper === 'pulse'"
+              class="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 shadow-xl"
+            >
+              <div class="border-b border-clinic-border dark:border-slate-700 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400">
+                เลือกค่า {{ vitalHelperConfigs.pulse.title }}
+              </div>
+              <div class="grid grid-cols-3 gap-1 p-2">
+                <button
+                  v-for="option in vitalHelperConfigs.pulse.options"
+                  :key="option"
+                  type="button"
+                  class="rounded-md px-2 py-1.5 text-xs transition-colors"
+                  :class="option === pulse ? 'bg-clinic-blue text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
+                  @mousedown.prevent="applyVitalSuggestion('pulse', option)"
+                >
+                  {{ option }}
+                </button>
+              </div>
+            </div>
           </div>
-          <div>
+          <div class="relative">
             <label class="block text-xs font-medium mb-1">RR (/min)</label>
-            <input v-model="rr" type="number" min="5" max="60" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="16" />
+            <input
+              v-model="rr"
+              type="number"
+              min="5"
+              max="60"
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              placeholder="16"
+              @focus="openVitalHelper('rr')"
+              @click="openVitalHelper('rr')"
+              @blur="closeVitalHelper"
+            />
+            <div
+              v-if="activeVitalHelper === 'rr'"
+              class="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 shadow-xl"
+            >
+              <div class="border-b border-clinic-border dark:border-slate-700 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400">
+                เลือกค่า {{ vitalHelperConfigs.rr.title }}
+              </div>
+              <div class="grid grid-cols-3 gap-1 p-2">
+                <button
+                  v-for="option in vitalHelperConfigs.rr.options"
+                  :key="option"
+                  type="button"
+                  class="rounded-md px-2 py-1.5 text-xs transition-colors"
+                  :class="option === rr ? 'bg-clinic-blue text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
+                  @mousedown.prevent="applyVitalSuggestion('rr', option)"
+                >
+                  {{ option }}
+                </button>
+              </div>
+            </div>
           </div>
-          <div>
+          <div class="relative">
             <label class="block text-xs font-medium mb-1">Temp (°C)</label>
-            <input v-model="temp" type="number" step="0.1" min="30" max="45" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="36.5" />
+            <input
+              v-model="temp"
+              type="number"
+              step="0.1"
+              min="30"
+              max="45"
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              placeholder="36.5"
+              @focus="openVitalHelper('temp')"
+              @click="openVitalHelper('temp')"
+              @blur="closeVitalHelper"
+            />
+            <div
+              v-if="activeVitalHelper === 'temp'"
+              class="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 shadow-xl"
+            >
+              <div class="border-b border-clinic-border dark:border-slate-700 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400">
+                เลือกค่า {{ vitalHelperConfigs.temp.title }}
+              </div>
+              <div class="grid grid-cols-3 gap-1 p-2">
+                <button
+                  v-for="option in vitalHelperConfigs.temp.options"
+                  :key="option"
+                  type="button"
+                  class="rounded-md px-2 py-1.5 text-xs transition-colors"
+                  :class="option === temp ? 'bg-clinic-blue text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
+                  @mousedown.prevent="applyVitalSuggestion('temp', option)"
+                >
+                  {{ option }}
+                </button>
+              </div>
+            </div>
           </div>
-          <div>
+          <div class="relative">
             <label class="block text-xs font-medium mb-1">SpO2 (%)</label>
-            <input v-model="spo2" type="number" min="50" max="100" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue" placeholder="98" />
+            <input
+              v-model="spo2"
+              type="number"
+              min="50"
+              max="100"
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              placeholder="98"
+              @focus="openVitalHelper('spo2')"
+              @click="openVitalHelper('spo2')"
+              @blur="closeVitalHelper"
+            />
+            <div
+              v-if="activeVitalHelper === 'spo2'"
+              class="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 shadow-xl"
+            >
+              <div class="border-b border-clinic-border dark:border-slate-700 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400">
+                เลือกค่า {{ vitalHelperConfigs.spo2.title }}
+              </div>
+              <div class="grid grid-cols-3 gap-1 p-2">
+                <button
+                  v-for="option in vitalHelperConfigs.spo2.options"
+                  :key="option"
+                  type="button"
+                  class="rounded-md px-2 py-1.5 text-xs transition-colors"
+                  :class="option === spo2 ? 'bg-clinic-blue text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
+                  @mousedown.prevent="applyVitalSuggestion('spo2', option)"
+                >
+                  {{ option }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -823,13 +1068,43 @@ watch([leaveStart, leaveEnd], () => {
           </div>
           <div>
             <label class="block text-xs font-medium mb-1">Diagnosis</label>
-            <textarea
-              v-model="diagnosis"
-              rows="3"
-              placeholder="วินิจฉัย"
-              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
-              @blur="formatDiagnosisOnBlur"
-            ></textarea>
+            <div class="relative">
+              <textarea
+                v-model="diagnosis"
+                rows="3"
+                placeholder="วินิจฉัย"
+                class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+                @focus="openDiagnosisOptions"
+                @click="openDiagnosisOptions"
+                @blur="closeDiagnosisOptions"
+              ></textarea>
+              <div
+                v-if="showDiagnosisOptions"
+                class="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 shadow-xl"
+              >
+                <div class="border-b border-clinic-border dark:border-slate-700 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  เลือกโรคที่ใช้บ่อย หรือพิมพ์เองได้
+                </div>
+                <div class="max-h-56 overflow-y-auto p-2 space-y-1">
+                  <button
+                    v-for="option in filteredDiagnosisOptions"
+                    :key="option"
+                    type="button"
+                    class="w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors"
+                    :class="option === diagnosis ? 'bg-clinic-blue text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
+                    @mousedown.prevent="selectDiagnosisOption(option)"
+                  >
+                    {{ option }}
+                  </button>
+                  <div
+                    v-if="!filteredDiagnosisOptions.length"
+                    class="rounded-md bg-slate-50 dark:bg-slate-800 px-2 py-2 text-[11px] text-slate-500 dark:text-slate-400"
+                  >
+                    ไม่พบในรายการ สามารถใช้ข้อความที่พิมพ์เป็นชื่อโรคได้เลย
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="space-y-3 md:col-span-2">
             <div class="flex items-center gap-2 text-xs">

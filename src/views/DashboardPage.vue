@@ -260,12 +260,36 @@ watch(departmentStats, () => {
   }
 })
 
+const clampChangePercent = (value) => {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(-100, Math.min(100, value))
+}
 const computeChangePercent = (current, previous) => {
   if (!previous) {
     return current > 0 ? 100 : 0
   }
   if (current === previous) return 0
-  return ((current - previous) / previous) * 100
+  return clampChangePercent(((current - previous) / previous) * 100)
+}
+const formatChangePercent = (change) => Math.abs(clampChangePercent(change)).toFixed(1)
+const getChangeTextClass = (change) =>
+  change > 0 ? 'text-red-500' : change < 0 ? 'text-emerald-500' : 'text-slate-400'
+const getChangeIconClass = (change, trend = false) => {
+  if (change > 0) return trend ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-up'
+  if (change < 0) return trend ? 'fa-solid fa-arrow-trend-down' : 'fa-solid fa-arrow-down'
+  return ''
+}
+const getChangeDescription = (change, includeComparison = false) => {
+  const value = `${formatChangePercent(change)}%`
+  if (change > 0) return includeComparison ? `เพิ่มขึ้น ${value} เทียบช่วงก่อนหน้า` : `เพิ่มขึ้น ${value}`
+  if (change < 0) return includeComparison ? `ลดลง ${value} เทียบช่วงก่อนหน้า` : `ลดลง ${value}`
+  return includeComparison ? 'คงที่จากช่วงก่อนหน้า' : 'คงที่'
+}
+const getCompactChangeText = (change) => {
+  const value = `${formatChangePercent(change)}%`
+  if (change > 0) return `+${value}`
+  if (change < 0) return `-${value}`
+  return value
 }
 
 const dayKey = (iso) => new Date(iso).toISOString().slice(0, 10)
@@ -862,14 +886,232 @@ const exportDashboardPdf = async () => {
       return `${day} ${monthName} ${year} ${hours}:${minutes}`
     }
 
-    const getKpiBadge = (change) => {
-      const absChange = Math.abs(change).toFixed(1)
-      if (change > 0) return `<span class="text-red font-bold">▲ ${absChange}%</span>`
-      if (change < 0) return `<span class="text-green font-bold">▼ ${absChange}%</span>`
-      return `<span class="muted">0.0%</span>`
+    const getChangeBadge = (change) => {
+      const absChange = formatChangePercent(change)
+      if (change > 0) return `<span class="text-red font-bold">เพิ่มขึ้น ${absChange}%</span>`
+      if (change < 0) return `<span class="text-green font-bold">ลดลง ${absChange}%</span>`
+      return `<span class="muted">คงที่</span>`
     }
+    const escapeHtml = (value) =>
+      String(value ?? '-').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[char] || char)
+    const fmtShort = (d) =>
+      new Date(d).toLocaleString('th-TH', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    const fmtDateOnly = (d) =>
+      d ? new Date(d).toLocaleDateString('th-TH') : '-'
+    const exportStartDate = currentStartDate || new Date(now.getFullYear(), now.getMonth(), 1)
+    const exportEndDate = currentEndDate || now
+
+    const [pdfCheckupsRes, pdfDispensingRes] = await Promise.all([
+      supabase
+        .from('checkups')
+        .select('id, created_at, diagnosis, symptoms, is_leave_allowed, leave_start, leave_end, total_leave_days, employees(employee_code, fullname, department)')
+        .gte('created_at', exportStartDate.toISOString())
+        .lte('created_at', exportEndDate.toISOString())
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('dispensing_records')
+        .select('id, amount, created_at, medicine:medicine_list(name), checkup:checkups(diagnosis, symptoms, employees(employee_code, fullname, department))')
+        .gte('created_at', exportStartDate.toISOString())
+        .lte('created_at', exportEndDate.toISOString())
+        .order('created_at', { ascending: false }),
+    ])
+
+    if (pdfCheckupsRes.error) throw pdfCheckupsRes.error
+    if (pdfDispensingRes.error) throw pdfDispensingRes.error
+
+    const pdfCheckups = (pdfCheckupsRes.data || []).map((row) => ({
+      id: row.id,
+      created_at: row.created_at,
+      diagnosis: (row.diagnosis || '').trim() || '-',
+      symptoms: (row.symptoms || '').trim() || '-',
+      is_leave_allowed: !!row.is_leave_allowed,
+      leave_start: row.leave_start,
+      leave_end: row.leave_end,
+      total_leave_days: row.total_leave_days || 0,
+      employee_code: row?.employees?.employee_code || '-',
+      fullname: row?.employees?.fullname || '-',
+      department: row?.employees?.department || 'ไม่ระบุ',
+    }))
+    const pdfDispensing = (pdfDispensingRes.data || []).map((row) => ({
+      id: row.id,
+      created_at: row.created_at,
+      medicineName: row?.medicine?.name || '-',
+      amount: row.amount || 0,
+      diagnosis: (row?.checkup?.diagnosis || '').trim() || '-',
+      symptoms: (row?.checkup?.symptoms || '').trim() || '-',
+      employee_code: row?.checkup?.employees?.employee_code || '-',
+      fullname: row?.checkup?.employees?.fullname || '-',
+      department: row?.checkup?.employees?.department || 'ไม่ระบุ',
+    }))
+
+    const renderTable = (headers, rows, emptyMessage) => `
+      <table>
+        <thead>
+          <tr>
+            ${headers.map((header) => `<th class="${header.className || ''}">${header.label}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length
+            ? rows.map((row) => `
+              <tr>
+                ${headers.map((header) => `<td class="${header.cellClassName || ''}">${header.render(row)}</td>`).join('')}
+              </tr>
+            `).join('')
+            : `<tr><td colspan="${headers.length}" class="muted text-center">${emptyMessage}</td></tr>`}
+        </tbody>
+      </table>
+    `
+    const renderGroupedSection = (title, groups, headers, emptyMessage) => `
+      <div class="section" style="page-break-before: always;">
+        <h2>${title}</h2>
+        ${groups.length
+          ? groups.map((group) => `
+            <div class="detail-group">
+              <h3>${group.title}</h3>
+              ${group.subtitle ? `<div class="muted">${group.subtitle}</div>` : ''}
+              ${renderTable(headers, group.rows, emptyMessage)}
+            </div>
+          `).join('')
+          : `<div class="muted">${emptyMessage}</div>`}
+      </div>
+    `
+
+    const departmentDetailGroups = departmentStats.value
+      .map((item) => {
+        const rows = pdfCheckups.filter((row) => row.department === item.department)
+        return {
+          title: `แผนก: ${escapeHtml(item.department)}`,
+          subtitle: `ผู้ป่วย ${rows.length} คน`,
+          rows,
+        }
+      })
+      .filter((group) => group.rows.length)
+
+    const diagnosisDetailGroups = topDiagnoses.value
+      .map((item) => {
+        const rows = pdfCheckups.filter((row) => row.diagnosis === item.diagnosis)
+        return {
+          title: `โรค: ${escapeHtml(item.diagnosis)}`,
+          subtitle: `พบทั้งหมด ${rows.length} ครั้ง`,
+          rows,
+        }
+      })
+      .filter((group) => group.rows.length)
+
+    const medicineDetailGroups = medicineStats.value
+      .slice(0, 10)
+      .map((item) => {
+        const rows = pdfDispensing.filter((row) => row.medicineName === item.name)
+        return {
+          title: `ยา: ${escapeHtml(item.name)}`,
+          subtitle: `จ่ายรวม ${rows.reduce((sum, row) => sum + (row.amount || 0), 0)} หน่วย`,
+          rows,
+        }
+      })
+      .filter((group) => group.rows.length)
+
+    const leaveDetailGroups = leaveStats.value
+      .map((item) => {
+        const rows = pdfCheckups
+          .filter((row) => row.is_leave_allowed && row.department === item.department)
+          .map((row) => ({
+            ...row,
+            period: `${fmtDateOnly(row.leave_start)} - ${fmtDateOnly(row.leave_end)}`,
+            days: row.total_leave_days || 0,
+          }))
+        return {
+          title: `แผนก: ${escapeHtml(item.department)}`,
+          subtitle: `จำนวนการลาพัก ${rows.length} ครั้ง`,
+          rows,
+        }
+      })
+      .filter((group) => group.rows.length)
+
+    const departmentDetailSection = renderGroupedSection(
+      'รายละเอียดผู้เข้ารับบริการแยกแผนก',
+      departmentDetailGroups,
+      [
+        { label: 'บันทึกเมื่อ', render: (row) => escapeHtml(fmtShort(row.created_at)) },
+        { label: 'รหัส', render: (row) => escapeHtml(row.employee_code) },
+        { label: 'ชื่อ-นามสกุล', render: (row) => escapeHtml(row.fullname) },
+        { label: 'วินิจฉัย/อาการ', render: (row) => escapeHtml(row.diagnosis !== '-' ? row.diagnosis : row.symptoms) },
+      ],
+      'ไม่มีข้อมูลรายละเอียดแผนก',
+    )
+
+    const diagnosisDetailSection = renderGroupedSection(
+      'รายละเอียดโรคที่พบบ่อย',
+      diagnosisDetailGroups,
+      [
+        { label: 'บันทึกเมื่อ', render: (row) => escapeHtml(fmtShort(row.created_at)) },
+        { label: 'รหัส', render: (row) => escapeHtml(row.employee_code) },
+        { label: 'ชื่อ-นามสกุล', render: (row) => escapeHtml(row.fullname) },
+        { label: 'แผนก', render: (row) => escapeHtml(row.department) },
+      ],
+      'ไม่มีข้อมูลรายละเอียดโรค',
+    )
+
+    const medicineDetailSection = renderGroupedSection(
+      'รายละเอียดการจ่ายยาแยกตามรายการยา',
+      medicineDetailGroups,
+      [
+        { label: 'บันทึกเมื่อ', render: (row) => escapeHtml(fmtShort(row.created_at)) },
+        { label: 'รหัส', render: (row) => escapeHtml(row.employee_code) },
+        { label: 'ชื่อ-นามสกุล', render: (row) => escapeHtml(row.fullname) },
+        { label: 'แผนก', render: (row) => escapeHtml(row.department) },
+        { label: 'วินิจฉัย', render: (row) => escapeHtml(row.diagnosis) },
+        { label: 'จำนวน', className: 'text-right', cellClassName: 'text-right', render: (row) => escapeHtml(row.amount) },
+      ],
+      'ไม่มีข้อมูลรายละเอียดการจ่ายยา',
+    )
+
+    const leaveDetailSection = renderGroupedSection(
+      'รายละเอียดการลาพักแยกแผนก',
+      leaveDetailGroups,
+      [
+        { label: 'บันทึกเมื่อ', render: (row) => escapeHtml(fmtShort(row.created_at)) },
+        { label: 'รหัส', render: (row) => escapeHtml(row.employee_code) },
+        { label: 'ชื่อ-นามสกุล', render: (row) => escapeHtml(row.fullname) },
+        { label: 'โรค/วินิจฉัย', render: (row) => escapeHtml(row.diagnosis) },
+        { label: 'ช่วงวันที่ลาพัก', render: (row) => escapeHtml(row.period) },
+        { label: 'รวมวัน', className: 'text-right', cellClassName: 'text-right', render: (row) => escapeHtml(row.days) },
+      ],
+      'ไม่มีข้อมูลการลาพัก',
+    )
+
+    const dispensingDetailSection = `
+      <div class="section" style="page-break-before: always;">
+        <h2>รายละเอียดการจ่ายยาทั้งหมด</h2>
+        ${renderTable(
+          [
+            { label: 'บันทึกเมื่อ', render: (row) => escapeHtml(fmtShort(row.created_at)) },
+            { label: 'รหัส', render: (row) => escapeHtml(row.employee_code) },
+            { label: 'ชื่อ-นามสกุล', render: (row) => escapeHtml(row.fullname) },
+            { label: 'แผนก', render: (row) => escapeHtml(row.department) },
+            { label: 'ยา', render: (row) => escapeHtml(row.medicineName) },
+            { label: 'วินิจฉัย', render: (row) => escapeHtml(row.diagnosis !== '-' ? row.diagnosis : row.symptoms) },
+            { label: 'จำนวน', className: 'text-right', cellClassName: 'text-right', render: (row) => escapeHtml(row.amount) },
+          ],
+          pdfDispensing,
+          'ไม่มีข้อมูลการจ่ายยา',
+        )}
+      </div>
+    `
 
     const w = window.open('', '_blank')
+    if (!w) throw new Error('ไม่สามารถเปิดหน้าต่างสำหรับพิมพ์ได้')
     const html = `
 <!doctype html>
 <html lang="th">
@@ -892,6 +1134,7 @@ const exportDashboardPdf = async () => {
       .text-green { color: #059669; }
       .text-red { color: #dc2626; }
       .text-blue { color: #2563eb; }
+      .text-center { text-align: center; }
       
       table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 5px; }
       th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
@@ -902,6 +1145,8 @@ const exportDashboardPdf = async () => {
       img { max-width: 100%; height: auto; max-height: 280px; }
       .flex-2 { display: flex; gap: 15px; }
       .col { flex: 1; }
+      h3 { font-size: 13px; margin: 0 0 6px; color: #1e293b; }
+      .detail-group { margin-top: 14px; page-break-inside: avoid; }
     </style>
   </head>
   <body>
@@ -923,7 +1168,7 @@ const exportDashboardPdf = async () => {
           <div class="card-title">ผู้ป่วย (คน)</div>
           <div class="card-val">${summary.value.patientsThisMonth.value}</div>
           <div class="card-diff">
-            ${getKpiBadge(summary.value.patientsThisMonth.change)}
+            ${getChangeBadge(summary.value.patientsThisMonth.change)}
           </div>
         </div>
         <div class="card">
@@ -936,22 +1181,24 @@ const exportDashboardPdf = async () => {
           <div class="card-val" style="font-size: 14px; height: 24px; overflow: hidden;">${summary.value.topDepartment.name}</div>
           <div class="card-diff">
              <span class="text-blue font-bold">${summary.value.topDepartment.value} ราย</span>
-             ${getKpiBadge(summary.value.topDepartment.change)}
+             ${getChangeBadge(summary.value.topDepartment.change)}
           </div>
+          <div class="muted">คิดเป็น ${summary.value.topDepartment.percentOfTotal.toFixed(1)}% ของผู้ป่วยทั้งหมด</div>
         </div>
         <div class="card">
           <div class="card-title">โรคที่พบบ่อย</div>
           <div class="card-val" style="font-size: 14px; height: 24px; overflow: hidden;">${summary.value.topDiagnosis.name}</div>
           <div class="card-diff">
              <span class="text-blue font-bold">${summary.value.topDiagnosis.value} ราย</span>
-             ${getKpiBadge(summary.value.topDiagnosis.change)}
+             ${getChangeBadge(summary.value.topDiagnosis.change)}
           </div>
+          <div class="muted">คิดเป็น ${summary.value.topDiagnosis.percentOfTotal.toFixed(1)}% ของผู้ป่วยทั้งหมด</div>
         </div>
         <div class="card">
           <div class="card-title">จ่ายยา (หน่วย)</div>
           <div class="card-val">${summary.value.dispensedThisMonth.value}</div>
           <div class="card-diff">
-             ${getKpiBadge(summary.value.dispensedThisMonth.change)}
+             ${getChangeBadge(summary.value.dispensedThisMonth.change)}
           </div>
         </div>
       </div>
@@ -967,7 +1214,7 @@ const exportDashboardPdf = async () => {
                 <th>แผนก</th>
                 <th class="text-right">ผู้ป่วย</th>
                 <th class="text-right">ใช้ยา</th>
-                <th class="text-right">KPI (%)</th>
+                <th class="text-right">ค่าผลต่าง</th>
               </tr>
             </thead>
             <tbody>
@@ -977,7 +1224,7 @@ const exportDashboardPdf = async () => {
                   <td class="text-right">${d.patientCount}</td>
                   <td class="text-right">${d.medicineCount}</td>
                   <td class="text-right">
-                    ${getKpiBadge(d.change)}
+                    ${getChangeBadge(d.change)}
                   </td>
                 </tr>
               `).join('')}
@@ -1002,7 +1249,7 @@ const exportDashboardPdf = async () => {
             <th>รายการยา</th>
             <th>อาการที่พบบ่อย</th>
             <th class="text-right">จำนวนที่จ่าย</th>
-            <th class="text-right">KPI (%)</th>
+            <th class="text-right">ค่าผลต่าง</th>
           </tr>
         </thead>
         <tbody>
@@ -1012,7 +1259,7 @@ const exportDashboardPdf = async () => {
               <td>${m.diagnosis}</td>
               <td class="text-right">${m.dispensedCount}</td>
               <td class="text-right">
-                ${getKpiBadge(m.change)}
+                ${getChangeBadge(m.change)}
               </td>
             </tr>
           `).join('')}
@@ -1034,37 +1281,74 @@ const exportDashboardPdf = async () => {
         <div class="col">
           <h2>โรคที่พบบ่อย (Top Diagnosis)</h2>
           <table>
-            <thead><tr><th>ชื่อโรค</th><th class="text-right">จำนวนครั้ง</th><th class="text-right">KPI (%)</th></tr></thead>
+            <thead><tr><th>ชื่อโรค</th><th class="text-right">จำนวนครั้ง</th><th class="text-right">ค่าผลต่าง</th></tr></thead>
             <tbody>
               ${topDiagnoses.value.map(r => `
                 <tr>
                   <td>${r.diagnosis}</td>
                   <td class="text-right">${r.count}</td>
                   <td class="text-right">
-                    ${getKpiBadge(r.change)}
+                    ${getChangeBadge(r.change)}
                   </td>
                 </tr>
               `).join('')}
+              ${topDiagnoses.value.length === 0 ? '<tr><td colspan="3" class="muted text-center">ไม่มีข้อมูล</td></tr>' : ''}
             </tbody>
           </table>
         </div>
         <div class="col">
-           <h2>ผู้ป่วยล่าสุด</h2>
+           <h2>การลาพักแยกแผนก</h2>
            <table>
-             <thead><tr><th>เวลา</th><th>ชื่อ-สกุล</th><th>แผนก</th></tr></thead>
+             <thead><tr><th>แผนก</th><th class="text-right">จำนวนการลา</th><th class="text-right">ค่าผลต่าง</th></tr></thead>
              <tbody>
-               ${lastPatients.value.map(p => `
+               ${leaveStats.value.slice(0, 10).map(row => `
                  <tr>
-                   <td>${new Date(p.created_at).toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'})}</td>
-                   <td>${p.fullname}</td>
-                   <td>${p.department}</td>
+                   <td>${row.department}</td>
+                   <td class="text-right">${row.leaveCount}</td>
+                   <td class="text-right">${getChangeBadge(row.change)}</td>
                  </tr>
                `).join('')}
+               ${leaveStats.value.length === 0 ? '<tr><td colspan="3" class="muted text-center">ไม่มีข้อมูล</td></tr>' : ''}
              </tbody>
            </table>
         </div>
       </div>
     </div>
+
+    <div class="section">
+      <h2>ผู้ป่วยล่าสุด</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>เวลา</th>
+            <th>รหัส</th>
+            <th>ชื่อ-สกุล</th>
+            <th>แผนก</th>
+            <th>อาการหลัก</th>
+            <th class="text-right">ยาที่จ่าย</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lastPatients.value.map(p => `
+            <tr>
+              <td>${new Date(p.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+              <td>${p.employee_code}</td>
+              <td>${p.fullname}</td>
+              <td>${p.department}</td>
+              <td>${p.diagnosis || p.symptoms || '-'}</td>
+              <td class="text-right">${p.amount}</td>
+            </tr>
+          `).join('')}
+          ${lastPatients.value.length === 0 ? '<tr><td colspan="6" class="muted text-center">ไม่มีข้อมูลผู้ป่วยล่าสุด</td></tr>' : ''}
+        </tbody>
+      </table>
+    </div>
+
+    ${departmentDetailSection}
+    ${diagnosisDetailSection}
+    ${medicineDetailSection}
+    ${leaveDetailSection}
+    ${dispensingDetailSection}
 
     <div style="margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 10px; text-align: center;" class="muted">
       รายงานนี้สร้างขึ้นโดยอัตโนมัติจากระบบ Clinic TDL Dashboard
@@ -1159,7 +1443,7 @@ const exportDashboardPdf = async () => {
           :class="summary.patientsThisMonth.change > 0 ? 'text-red-500' : summary.patientsThisMonth.change < 0 ? 'text-emerald-500' : 'text-slate-400'"
         >
           <i v-if="summary.patientsThisMonth.change !== 0" :class="summary.patientsThisMonth.change > 0 ? 'fa-solid fa-arrow-trend-up' : 'fa-solid fa-arrow-trend-down'"></i>
-          {{ Math.abs(summary.patientsThisMonth.change).toFixed(1) }}% เทียบช่วงก่อนหน้า
+          {{ getChangeDescription(summary.patientsThisMonth.change, true) }}
         </div>
       </div>
 
@@ -1200,7 +1484,7 @@ const exportDashboardPdf = async () => {
             :class="summary.topDepartment.change > 0 ? 'text-red-500' : summary.topDepartment.change < 0 ? 'text-emerald-500' : 'text-slate-400'"
           >
             <i v-if="summary.topDepartment.change !== 0" :class="summary.topDepartment.change > 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-            {{ Math.abs(summary.topDepartment.change).toFixed(1) }}%
+            {{ formatChangePercent(summary.topDepartment.change) }}%
           </div>
         </div>
         <div class="text-[10px] text-slate-400">
@@ -1229,7 +1513,7 @@ const exportDashboardPdf = async () => {
             :class="summary.topDiagnosis.change > 0 ? 'text-red-500' : summary.topDiagnosis.change < 0 ? 'text-emerald-500' : 'text-slate-400'"
           >
             <i v-if="summary.topDiagnosis.change !== 0" :class="summary.topDiagnosis.change > 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-            {{ Math.abs(summary.topDiagnosis.change).toFixed(1) }}%
+            {{ formatChangePercent(summary.topDiagnosis.change) }}%
           </div>
         </div>
         <div class="text-[10px] text-slate-400">
@@ -1256,14 +1540,14 @@ const exportDashboardPdf = async () => {
           :class="summary.dispensedThisMonth.change > 0 ? 'text-red-500' : summary.dispensedThisMonth.change < 0 ? 'text-emerald-500' : 'text-slate-400'"
         >
           <i v-if="summary.dispensedThisMonth.change !== 0" :class="summary.dispensedThisMonth.change > 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-          {{ Math.abs(summary.dispensedThisMonth.change).toFixed(1) }}% เทียบช่วงก่อนหน้า
+          {{ getChangeDescription(summary.dispensedThisMonth.change, true) }}
         </div>
       </div>
     </div>
 
     <!-- Middle Section (6-6) -->
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      <!-- KPI Chart -->
+      <!-- Trend Chart -->
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 h-80 flex flex-col shadow-sm">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-sm font-semibold text-slate-800 dark:text-white">แนวโน้มการรับรักษา</h2>
@@ -1314,7 +1598,7 @@ const exportDashboardPdf = async () => {
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm flex flex-col">
         <h2 class="text-xs font-semibold text-slate-800 dark:text-white mb-2 flex items-center justify-between">
           <span><i class="fa-solid fa-virus text-rose-500 mr-1"></i> โรคที่พบบ่อย (Top 7)</span>
-          <span class="text-[10px] font-normal text-slate-400">KPI</span>
+          <span class="text-[10px] font-normal text-slate-400">ค่าผลต่าง</span>
         </h2>
         <div v-if="topDiagnoses.length" class="space-y-1.5 text-[11px] flex-1">
           <div
@@ -1335,7 +1619,7 @@ const exportDashboardPdf = async () => {
                 class="text-[9px] font-bold"
                 :class="row.change > 0 ? 'text-red-500' : row.change < 0 ? 'text-emerald-500' : 'text-orange-500'"
               >
-                {{ row.change > 0 ? '+' : '' }}{{ row.change.toFixed(1) }}%
+                {{ getCompactChangeText(row.change) }}
               </span>
             </div>
           </div>
@@ -1346,7 +1630,7 @@ const exportDashboardPdf = async () => {
       <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm flex flex-col">
         <h2 class="text-xs font-semibold text-slate-800 dark:text-white mb-2 flex items-center justify-between">
           <span><i class="fa-solid fa-pills text-indigo-500 mr-1"></i> รายการยาใช้มาก (Top 7)</span>
-          <span class="text-[10px] font-normal text-slate-400">KPI</span>
+          <span class="text-[10px] font-normal text-slate-400">ค่าผลต่าง</span>
         </h2>
         <div v-if="medicineStats.length" class="space-y-1.5 text-[11px] flex-1">
           <div
@@ -1367,7 +1651,7 @@ const exportDashboardPdf = async () => {
                 class="text-[9px] font-bold"
                 :class="row.change > 0 ? 'text-red-500' : row.change < 0 ? 'text-emerald-500' : 'text-orange-500'"
               >
-                {{ row.change > 0 ? '+' : '' }}{{ row.change.toFixed(1) }}%
+                {{ getCompactChangeText(row.change) }}
               </span>
             </div>
           </div>
@@ -1404,7 +1688,7 @@ const exportDashboardPdf = async () => {
                 class="text-[9px] font-bold"
                 :class="row.change > 0 ? 'text-red-500' : row.change < 0 ? 'text-emerald-500' : 'text-orange-500'"
               >
-                {{ row.change > 0 ? '+' : '' }}{{ row.change.toFixed(1) }}%
+                {{ getCompactChangeText(row.change) }}
               </span>
             </div>
           </div>
@@ -1441,7 +1725,7 @@ const exportDashboardPdf = async () => {
                 class="text-[9px] font-bold"
                 :class="row.change > 0 ? 'text-red-500' : row.change < 0 ? 'text-emerald-500' : 'text-orange-500'"
               >
-                {{ row.change > 0 ? '+' : '' }}{{ row.change.toFixed(1) }}%
+                {{ getCompactChangeText(row.change) }}
               </span>
             </div>
           </div>
