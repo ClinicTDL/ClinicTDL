@@ -288,9 +288,9 @@ onMounted(async () => {
             <th class="py-2 pr-3">รหัสพนักงาน</th>
             <th class="py-2 pr-3">ชื่อ-นามสกุล</th>
             <th class="py-2 pr-3">แผนก</th>
+            <th class="py-2 pr-3">แพทย์วินิจฉัย</th>
             <th class="py-2 pr-3">ชื่อยา</th>
             <th class="py-2 pr-3">จำนวน</th>
-            <th class="py-2 pr-3">วินิจฉัย</th>
             <th class="py-2 pr-3">ผู้จ่ายยา</th>
           </tr>
         </thead>
@@ -301,14 +301,14 @@ onMounted(async () => {
             class="border-b border-clinic-border/60 dark:border-slate-800"
           >
             <td class="py-1.5 pr-3">
-              {{ new Date(r.created_at).toLocaleString() }}
+              {{ new Date(r.created_at).toLocaleString('en-GB', { dateStyle: 'short'}) }} <br> <span class="bg-fuchsia-100 dark:bg-fuchsia-800/40 text-center text-[10px] border border-fuchsia-200 dark:border-fuchsia-800/40 px-1.5 rounded-full italic text-fuchsia-600 dark:text-fuchsia-400"> {{ new Date(r.created_at).toLocaleString('en-GB', {timeStyle: 'short' })}}</span>
             </td>
             <td class="py-1.5 pr-3">{{ r.employee_code }}</td>
             <td class="py-1.5 pr-3">{{ r.fullname }}</td>
             <td class="py-1.5 pr-3">{{ r.department }}</td>
-            <td class="py-1.5 pr-3">{{ r.medicine_name }}</td>
-            <td class="py-1.5 pr-3">{{ r.amount }} {{ r.unit }}</td>
             <td class="py-1.5 pr-3">{{ r.diagnosis }}</td>
+            <td class="py-1.5 pr-3">{{ r.medicine_name }}</td>
+            <td class="py-1.5 pr-3"><span class="border-2 rounded-sm border-white dark:border-slate-800  border-b-rose-500 dark:border-b-rose-400 border-r-rose-500 dark:border-r-rose-400 px-1 text-[14px] text-rose-500 dark:text-rose-400">{{ r.amount }} {{ r.unit }}</span></td>
             <td class="py-1.5 pr-3">{{ r.dispenser }}</td>
           </tr>
           <tr v-if="!filtered.length && !loading">
@@ -345,7 +345,7 @@ onMounted(async () => {
             <div class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
               <span class="text-blue-600 dark:text-blue-400">{{ group.employee_code }}</span>
               <span class="truncate">{{ group.fullname }}</span>
-              <span class="shrink-0 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
+              <span class="shrink-0 rounded-full border border-emerald-700 dark:border-emerald-800/60 bg-emerald-500/10 dark:bg-emerald-800/60 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-400">
                 {{ group.department || 'ไม่ระบุ' }}
               </span>
             </div>
@@ -371,10 +371,10 @@ onMounted(async () => {
           <div class="flex shrink-0 items-center gap-4 text-right">
             <div class="text-xs text-slate-500 dark:text-slate-400">
               <div class="font-medium text-slate-700 dark:text-slate-200">
-                {{ new Date(group.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' }) }}
+                {{ new Date(group.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' }) }}
               </div>
               <div class="mt-0.5">
-                {{ new Date(group.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }}
+                {{ new Date(group.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }}
               </div>
             </div>
             <i class="fa-solid fa-chevron-right text-xs text-slate-300 dark:text-slate-600"></i>
@@ -433,7 +433,7 @@ onMounted(async () => {
                   <span>วันที่</span>
                 </div>
                 <div class="font-semibold text-slate-800 dark:text-white">
-                  {{ selectedSimpleGroup ? new Date(selectedSimpleGroup.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' }) : '-' }}
+                  {{ selectedSimpleGroup ? new Date(selectedSimpleGroup.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' }) : '-' }}
                 </div>
               </div>
               <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0a1834] p-3">

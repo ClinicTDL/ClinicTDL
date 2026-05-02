@@ -368,6 +368,7 @@ onMounted(loadMedicines)
               <option value="คู่">คู่</option>
               <option value="ดวง">ดวง</option>
               <option value="อัน">อัน</option>
+              <option value="กล่อง">กล่อง</option>
             </select>
           </div>
           <div>

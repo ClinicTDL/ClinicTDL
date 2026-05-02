@@ -385,6 +385,7 @@ const getUnitCap = (unitRaw) => {
   if (unit === 'ขวด') return 1
   if (unit === 'หลอด') return 3
   if (unit === 'ถุง') return 1
+  if (unit === 'กล่อง') return 1
   return 3
 }
 
