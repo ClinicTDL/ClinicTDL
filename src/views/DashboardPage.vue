@@ -58,7 +58,8 @@ const loading = ref(true)
 const summary = ref({
   patientsThisMonth: { value: 0, prev: 0, change: 0 },
   totalStock: { value: 0, change: 0 },
-  topDepartment: { name: '-', value: 0, prev: 0, change: 0, percentOfTotal: 0 },
+  totalStaff: { value: 0 },
+  topDepartment: { name: '-', value: 0, prev: 0, change: 0, percentOfTotal: 0, totalStaffPercent: 0, employeeCount: 0 },
   topDiagnosis: { name: '-', value: 0, prev: 0, change: 0, percentOfTotal: 0 },
   dispensedThisMonth: { value: 0, prev: 0, change: 0 },
 })
@@ -94,6 +95,8 @@ const selectedDept = ref('')
 const deptDetails = ref([])
 const diagnosisSummary = ref([])
 const loadingDeptDetails = ref(false)
+const selectedDeptEmployeeCount = ref(0)
+const selectedDeptPatientCount = ref(0)
 
 const showLeaveModal = ref(false)
 const selectedLeaveDept = ref('')
@@ -383,7 +386,8 @@ const loadDashboardData = async () => {
       allCheckupsRangeRes,
       allCheckupsPrevRes,
       allDispensingRangeRes,
-      allDispensingPrevRes
+      allDispensingPrevRes,
+      employeesRes
     ] = await Promise.all([
       supabase.from('checkups').select('id, created_at, diagnosis, symptoms, is_leave_allowed, employees(department)').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
       supabase.from('checkups').select('id, created_at, diagnosis, symptoms, is_leave_allowed, employees(department)').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
@@ -397,7 +401,8 @@ const loadDashboardData = async () => {
       supabase.from('checkups').select('id, employees(department)').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
       supabase.from('checkups').select('id, employees(department)').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
       supabase.from('dispensing_records').select('id, amount, medicine:medicine_list(name), checkup:checkups(diagnosis, symptoms, employees(department))').gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
-      supabase.from('dispensing_records').select('id, amount, medicine:medicine_list(name), checkup:checkups(diagnosis, symptoms, employees(department))').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString())
+      supabase.from('dispensing_records').select('id, amount, medicine:medicine_list(name), checkup:checkups(diagnosis, symptoms, employees(department))').gte('created_at', prevStartDate.toISOString()).lte('created_at', prevEndDate.toISOString()),
+      supabase.from('employees').select('department').eq('status', 'พนักงาน').eq('project', 'เชโปน')
     ])
 
     // Process Summary
@@ -406,6 +411,18 @@ const loadDashboardData = async () => {
     const totalStockRows = totalStockRes.data || []
     const dispensedRangeValue = (dispensedRangeRes.data || []).reduce((sum, r) => sum + (r.amount || 0), 0)
     const dispensedPrevValue = (dispensedPrevRes.data || []).reduce((sum, r) => sum + (r.amount || 0), 0)
+    
+    // Process Employee Counts by Department
+    const employees = employeesRes.data || []
+    const getEmployeeCountByDept = (rows) => {
+      const map = {}
+      rows.forEach(r => {
+        const d = r?.department || 'ไม่ระบุ'
+        map[d] = (map[d] || 0) + 1
+      })
+      return map
+    }
+    const employeeCountByDept = getEmployeeCountByDept(employees)
 
     // 1. Top Department Stats
     const getDeptStats = (rows) => {
@@ -441,10 +458,20 @@ const loadDashboardData = async () => {
     const topDiagPrevVal = diagMapPrev[topDiagName] || 0
     const topDiagPercent = patientsRange.length ? (topDiagVal / patientsRange.length) * 100 : 0
 
+    const totalEmployeeCount = employees.length
     summary.value = {
       patientsThisMonth: { value: patientsRange.length, prev: patientsPrev.length, change: computeChangePercent(patientsRange.length, patientsPrev.length) },
       totalStock: { value: totalStockRows.reduce((sum, r) => sum + (r.current_stock || 0), 0), change: 0 },
-      topDepartment: { name: topDeptName, value: topDeptVal, prev: topDeptPrevVal, change: computeChangePercent(topDeptVal, topDeptPrevVal), percentOfTotal: topDeptPercent },
+      totalStaff: { value: totalEmployeeCount },
+      topDepartment: { 
+        name: topDeptName, 
+        value: topDeptVal, 
+        prev: topDeptPrevVal, 
+        change: computeChangePercent(topDeptVal, topDeptPrevVal), 
+        percentOfTotal: topDeptPercent,
+        employeeCount: employeeCountByDept[topDeptName] || 0,
+        totalStaffPercent: employeeCountByDept[topDeptName] ? (topDeptVal / employeeCountByDept[topDeptName]) * 100 : 0
+      },
       topDiagnosis: { name: topDiagName, value: topDiagVal, prev: topDiagPrevVal, change: computeChangePercent(topDiagVal, topDiagPrevVal), percentOfTotal: topDiagPercent },
       dispensedThisMonth: { value: dispensedRangeValue, prev: dispensedPrevValue, change: computeChangePercent(dispensedRangeValue, dispensedPrevValue) },
     }
@@ -574,7 +601,8 @@ const loadDashboardData = async () => {
         department: dept,
         patientCount: data.patientCount,
         medicineCount: data.medicineCount,
-        change: computeChangePercent(data.patientCount, fullDeptMapPrev[dept]?.patientCount || 0)
+        change: computeChangePercent(data.patientCount, fullDeptMapPrev[dept]?.patientCount || 0),
+        employeeCount: employeeCountByDept[dept] || 0
       }))
       .sort((a, b) => b.patientCount - a.patientCount)
 
@@ -621,8 +649,18 @@ const openDeptDetails = async (dept) => {
   loadingDeptDetails.value = true
   deptDetails.value = []
   diagnosisSummary.value = []
+  selectedDeptEmployeeCount.value = 0
+  selectedDeptPatientCount.value = 0
 
   try {
+    // First, check if we already have the stats from departmentStats
+    const deptStat = departmentStats.value.find(d => d.department === dept)
+    if (deptStat) {
+      selectedDeptEmployeeCount.value = deptStat.employeeCount || 0
+      selectedDeptPatientCount.value = deptStat.patientCount || 0
+    }
+
+    // Original query logic that was working correctly
     let query = supabase
       .from('checkups')
       .select('id, created_at, diagnosis, symptoms, employees!inner(employee_code, fullname, department)')
@@ -639,13 +677,31 @@ const openDeptDetails = async (dept) => {
         .lte('created_at', currentEndDate.toISOString())
         .order('created_at', { ascending: false })
     } else {
-      query = query.ilike('employees.department', dept)
+      query = query.eq('employees.department', dept)
+      
+      // If we don't have stats from departmentStats, fetch them
+      if (!deptStat) {
+        const employeesRes = await supabase
+          .from('employees')
+          .select('id')
+          .eq('status', 'พนักงาน')
+          .eq('project', 'เชโปน')
+          .eq('department', dept)
+        if (!employeesRes.error) {
+          selectedDeptEmployeeCount.value = employeesRes.data?.length || 0
+        }
+      }
     }
 
     const { data, error } = await query
     if (error) throw error
 
     const rows = data || []
+    // If we don't have patient count from deptStat, use the length from this query
+    if (!deptStat) {
+      selectedDeptPatientCount.value = rows.length
+    }
+    
     deptDetails.value = rows.map(r => ({
       ...r,
       fullname: r.employees?.fullname || '-',
@@ -1487,8 +1543,8 @@ const exportDashboardPdf = async () => {
             {{ formatChangePercent(summary.topDepartment.change) }}%
           </div>
         </div>
-        <div class="text-[10px] text-slate-400">
-          คิดเป็น {{ summary.topDepartment.percentOfTotal.toFixed(1) }}% ของทั้งหมด
+        <div class="text-[10px] text-slate-400 dark:text-slate-300">
+          <span class="text-amber-600 dark:text-amber-400">{{ summary.topDepartment.percentOfTotal.toFixed(1) }}%</span> ของคนไข้ทั้งหมด และ <span class="text-slate-600 dark:text-slate-100">{{ summary.topDepartment.totalStaffPercent.toFixed(1) }}%</span> ของแผนก <span class="text-slate-600 dark:text-slate-100">({{ summary.topDepartment.employeeCount }})</span>
         </div>
       </div>
 
@@ -1801,7 +1857,7 @@ const exportDashboardPdf = async () => {
             </div>
             <template v-else>
               <!-- Diagnosis Summary -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-white dark:bg-slate-900/40 border border-clinic-border dark:border-slate-700 rounded-xl p-4">
                   <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
                     <i class="fa-solid fa-chart-pie text-clinic-blue"></i>
@@ -1817,8 +1873,19 @@ const exportDashboardPdf = async () => {
                 </div>
                 
                 <div class="flex flex-col justify-center items-center p-6 bg-clinic-blue/5 dark:bg-clinic-blue/10 rounded-xl border border-clinic-blue/20">
-                  <div class="text-3xl font-black text-clinic-blue mb-1">{{ deptDetails.length }}</div>
-                  <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">จำนวนผู้ป่วยทั้งหมดในแผนก</div>
+                  <div class="text-3xl font-black text-clinic-blue mb-1">{{ selectedDeptPatientCount }}</div>
+                  <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">จำนวนผู้ป่วย</div>
+                </div>
+                
+                <div class="flex flex-col justify-center items-center p-6 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border border-emerald-200 dark:border-emerald-800/50">
+                  <div class="text-3xl font-black text-emerald-600 mb-1">{{ selectedDeptEmployeeCount }}</div>
+                  <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">พนักงาน (เชโปน)</div>
+                  <div class="mt-2 text-center">
+                    <div class="text-2xl font-black text-slate-800 dark:text-slate-200">
+                      {{ selectedDeptEmployeeCount > 0 ? ((selectedDeptPatientCount / selectedDeptEmployeeCount) * 100).toFixed(1) : 0 }}%
+                    </div>
+                    <div class="text-[10px] font-semibold text-slate-500">อัตราการเข้ารับบริการ</div>
+                  </div>
                 </div>
               </div>
 
