@@ -97,6 +97,7 @@ const diagnosisSummary = ref([])
 const loadingDeptDetails = ref(false)
 const selectedDeptEmployeeCount = ref(0)
 const selectedDeptPatientCount = ref(0)
+const selectedDeptLeaveCount = ref(0)
 
 const showLeaveModal = ref(false)
 const selectedLeaveDept = ref('')
@@ -293,6 +294,74 @@ const getCompactChangeText = (change) => {
   if (change > 0) return `+${value}`
   if (change < 0) return `-${value}`
   return value
+}
+
+const getRiskInfo = (percent) => {
+  if (percent <= 10) {
+    return {
+      color: 'text-emerald-600 dark:text-emerald-400',
+      bgColor: 'bg-emerald-50 dark:bg-emerald-900/20',
+      text: 'ไม่มีความเสี่ยงรุนแรง'
+    }
+  } else if (percent <= 20) {
+    return {
+      color: 'text-lime-600 dark:text-lime-400',
+      bgColor: 'bg-lime-50 dark:bg-lime-900/20',
+      text: 'ความเสี่ยงต่ำ'
+    }
+  } else if (percent <= 35) {
+    return {
+      color: 'text-yellow-600 dark:text-yellow-400',
+      bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
+      text: 'ความเสี่ยงปานกลาง'
+    }
+  } else if (percent <= 50) {
+    return {
+      color: 'text-orange-600 dark:text-orange-400',
+      bgColor: 'bg-orange-50 dark:bg-orange-900/20',
+      text: 'ความเสี่ยงสูง'
+    }
+  } else {
+    return {
+      color: 'text-red-600 dark:text-red-400',
+      bgColor: 'bg-red-50 dark:bg-red-900/20',
+      text: 'ความเสี่ยงรุนแรง'
+    }
+  }
+}
+
+const getFrequencyInfo = (percent) => {
+  if (percent <= 10) {
+    return {
+      color: 'text-emerald-600 dark:text-emerald-400',
+      bgColor: 'bg-emerald-50 dark:bg-emerald-900/20',
+      text: 'ความถี่ต่ำ'
+    }
+  } else if (percent <= 20) {
+    return {
+      color: 'text-lime-600 dark:text-lime-400',
+      bgColor: 'bg-lime-50 dark:bg-lime-900/20',
+      text: 'ความถี่ปานกลาง'
+    }
+  } else if (percent <= 35) {
+    return {
+      color: 'text-yellow-600 dark:text-yellow-400',
+      bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
+      text: 'ความถี่สูง'
+    }
+  } else if (percent <= 50) {
+    return {
+      color: 'text-orange-600 dark:text-orange-400',
+      bgColor: 'bg-orange-50 dark:bg-orange-900/20',
+      text: 'ความถี่สูงมาก'
+    }
+  } else {
+    return {
+      color: 'text-red-600 dark:text-red-400',
+      bgColor: 'bg-red-50 dark:bg-red-900/20',
+      text: 'ความถี่สูงมาก'
+    }
+  }
 }
 
 const dayKey = (iso) => new Date(iso).toISOString().slice(0, 10)
@@ -651,6 +720,7 @@ const openDeptDetails = async (dept) => {
   diagnosisSummary.value = []
   selectedDeptEmployeeCount.value = 0
   selectedDeptPatientCount.value = 0
+  selectedDeptLeaveCount.value = 0
 
   try {
     // First, check if we already have the stats from departmentStats
@@ -660,10 +730,10 @@ const openDeptDetails = async (dept) => {
       selectedDeptPatientCount.value = deptStat.patientCount || 0
     }
 
-    // Original query logic that was working correctly
+    // Original query logic that was working correctly - add leave fields
     let query = supabase
       .from('checkups')
-      .select('id, created_at, diagnosis, symptoms, employees!inner(employee_code, fullname, department)')
+      .select('id, created_at, diagnosis, symptoms, is_leave_allowed, leave_start, leave_end, total_leave_days, employees!inner(employee_code, fullname, department)')
       .gte('created_at', currentStartDate.toISOString())
       .lte('created_at', currentEndDate.toISOString())
       .order('created_at', { ascending: false })
@@ -671,7 +741,7 @@ const openDeptDetails = async (dept) => {
     if (dept === 'Unknown' || !dept) {
       query = supabase
         .from('checkups')
-        .select('id, created_at, diagnosis, symptoms, employees(employee_code, fullname, department)')
+        .select('id, created_at, diagnosis, symptoms, is_leave_allowed, leave_start, leave_end, total_leave_days, employees(employee_code, fullname, department)')
         .is('employees', null)
         .gte('created_at', currentStartDate.toISOString())
         .lte('created_at', currentEndDate.toISOString())
@@ -702,11 +772,18 @@ const openDeptDetails = async (dept) => {
       selectedDeptPatientCount.value = rows.length
     }
     
+    // Calculate leave count from the rows
+    selectedDeptLeaveCount.value = rows.filter(r => r.is_leave_allowed).length
+    
     deptDetails.value = rows.map(r => ({
       ...r,
       fullname: r.employees?.fullname || '-',
       employee_code: r.employees?.employee_code || '-',
-      diagnosis: (r.diagnosis || '').trim() || '-'
+      diagnosis: (r.diagnosis || '').trim() || '-',
+      is_leave_allowed: r.is_leave_allowed || false,
+      leave_start: r.leave_start,
+      leave_end: r.leave_end,
+      total_leave_days: r.total_leave_days || 0
     }))
 
     const summaryMap = {}
@@ -1550,7 +1627,7 @@ const exportDashboardPdf = async () => {
 
       <!-- Top Diagnosis -->
       <div 
-        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all group relative z-30 pointer-events-auto"
+        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/10 transition-all group relative z-30 pointer-events-auto"
         @click="openDiagDetails(summary.topDiagnosis.name)"
       >
         <div class="flex items-center justify-between">
@@ -1572,14 +1649,14 @@ const exportDashboardPdf = async () => {
             {{ formatChangePercent(summary.topDiagnosis.change) }}%
           </div>
         </div>
-        <div class="text-[10px] text-slate-400">
-          คิดเป็น {{ summary.topDiagnosis.percentOfTotal.toFixed(1) }}% ของทั้งหมด
+        <div class="text-[10px] text-slate-400 dark:text-slate-300">
+          คิดเป็น <span class="text-rose-600 dark:text-rose-400">{{ summary.topDiagnosis.percentOfTotal.toFixed(1) }}%</span> ของทั้งหมด
         </div>
       </div>
 
       <!-- Dispensed -->
       <div 
-        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all group relative z-30 pointer-events-auto"
+        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-900/10 transition-all group relative z-30 pointer-events-auto"
         @click="openDispensedDetails"
       >
         <div class="flex items-center justify-between">
@@ -1715,8 +1792,8 @@ const exportDashboardPdf = async () => {
       </div>
 
       <!-- Department Stats (Scrollable) -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm flex flex-col">
-        <div class="flex items-center justify-between mb-2">
+      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl px-4 py-2 space-y-3 shadow-sm flex flex-col">
+        <div class="flex items-center justify-between mb-0">
           <h2 class="text-xs font-semibold text-slate-800 dark:text-white">
             <i class="fa-solid fa-building text-emerald-500 mr-1"></i> แผนกทั้งหมด
           </h2>
@@ -1752,8 +1829,8 @@ const exportDashboardPdf = async () => {
       </div>
 
       <!-- Leave Stats (Scrollable) -->
-      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 space-y-3 shadow-sm flex flex-col">
-        <div class="flex items-center justify-between mb-2">
+      <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl px-4 py-2 space-y-3 shadow-sm flex flex-col">
+        <div class="flex items-center justify-between mb-0">
           <h2 class="text-xs font-semibold text-slate-800 dark:text-white">
             <i class="fa-solid fa-calendar-xmark text-amber-500 mr-1"></i> การลาพักแยกแผนก
           </h2>
@@ -1875,16 +1952,30 @@ const exportDashboardPdf = async () => {
                 <div class="flex flex-col justify-center items-center p-6 bg-clinic-blue/5 dark:bg-clinic-blue/10 rounded-xl border border-clinic-blue/20">
                   <div class="text-3xl font-black text-clinic-blue mb-1">{{ selectedDeptPatientCount }}</div>
                   <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">จำนวนผู้ป่วย</div>
+                  <div class="mt-3 text-center border-t border-clinic-blue/20 pt-3 w-full">
+                    <div class="text-2xl font-black text-amber-600 mb-1">{{ selectedDeptLeaveCount }}</div>
+                    <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">ลาพัก</div>
+                    <div class="mt-1">
+                      <div :class="getRiskInfo(selectedDeptPatientCount > 0 ? ((selectedDeptLeaveCount / selectedDeptPatientCount) * 100) : 0).color" class="text-xl font-black">
+                        {{ selectedDeptPatientCount > 0 ? ((selectedDeptLeaveCount / selectedDeptPatientCount) * 100).toFixed(1) : 0 }}%
+                      </div>
+                      <div :class="getRiskInfo(selectedDeptPatientCount > 0 ? ((selectedDeptLeaveCount / selectedDeptPatientCount) * 100) : 0).color" class="text-[10px] font-semibold">
+                        {{ getRiskInfo(selectedDeptPatientCount > 0 ? ((selectedDeptLeaveCount / selectedDeptPatientCount) * 100) : 0).text }}
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 
                 <div class="flex flex-col justify-center items-center p-6 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border border-emerald-200 dark:border-emerald-800/50">
                   <div class="text-3xl font-black text-emerald-600 mb-1">{{ selectedDeptEmployeeCount }}</div>
                   <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">พนักงาน (เชโปน)</div>
                   <div class="mt-2 text-center">
-                    <div class="text-2xl font-black text-slate-800 dark:text-slate-200">
+                    <div :class="getFrequencyInfo(selectedDeptEmployeeCount > 0 ? ((selectedDeptPatientCount / selectedDeptEmployeeCount) * 100) : 0).color" class="text-2xl font-black">
                       {{ selectedDeptEmployeeCount > 0 ? ((selectedDeptPatientCount / selectedDeptEmployeeCount) * 100).toFixed(1) : 0 }}%
                     </div>
-                    <div class="text-[10px] font-semibold text-slate-500">อัตราการเข้ารับบริการ</div>
+                    <div :class="getFrequencyInfo(selectedDeptEmployeeCount > 0 ? ((selectedDeptPatientCount / selectedDeptEmployeeCount) * 100) : 0).color" class="text-[10px] font-semibold">
+                      {{ getFrequencyInfo(selectedDeptEmployeeCount > 0 ? ((selectedDeptPatientCount / selectedDeptEmployeeCount) * 100) : 0).text }}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1903,6 +1994,7 @@ const exportDashboardPdf = async () => {
                         <th class="py-3 px-4 text-left font-semibold">รหัสพนักงาน</th>
                         <th class="py-3 px-4 text-left font-semibold">ชื่อ-นามสกุล</th>
                         <th class="py-3 px-4 text-left font-semibold">อาการ/วินิจฉัย</th>
+                        <th class="py-3 px-4 text-left font-semibold">วันพัก</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-clinic-border/60 dark:divide-slate-700">
@@ -1917,9 +2009,15 @@ const exportDashboardPdf = async () => {
                             {{ row.diagnosis }}
                           </span>
                         </td>
+                        <td class="py-3 px-4">
+                          <span v-if="row.is_leave_allowed && row.leave_start && row.leave_end" class="px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 font-medium">
+                            {{ new Date(row.leave_start).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) }} - {{ new Date(row.leave_end).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' }) }} ({{ row.total_leave_days || 0 }} วัน)
+                          </span>
+                          <span v-else class="text-slate-400 text-[11px]">-</span>
+                        </td>
                       </tr>
                       <tr v-if="!deptDetails.length">
-                        <td colspan="4" class="py-10 text-center text-slate-400 italic">ไม่พบข้อมูลรายละเอียด</td>
+                        <td colspan="5" class="py-10 text-center text-slate-400 italic">ไม่พบข้อมูลรายละเอียด</td>
                       </tr>
                     </tbody>
                   </table>

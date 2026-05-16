@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { supabase, supabaseStorage, STORAGE_BUCKET } from '../supabaseClient'
 import { showToast, showConfirm } from '../stores/ui'
 const employeeCode = ref('')
@@ -18,24 +18,192 @@ const rr = ref('')
 const spo2 = ref('')
 const symptoms = ref('')
 const diagnosis = ref('')
-const diagnosisOptions = [
-  'Common Cold',
-  'Gastritis',
-  'Diarrhea',
-  'Pharyngitis',
-  'Headache',
-  'Menstrual Pain',
-  'Dizziness',
-  'Back Pain',
-  'Otitis Externa',
-  'Pneumonia',
-  'Menstrual Cramps',
-  'Endometritis',
-  'High Blood Pressure',
-  'Eye Inflammation',
-]
+const diagnosisOptions = ref([])
 const showDiagnosisOptions = ref(false)
 let diagnosisBlurTimer = null
+
+// Diagnosis Management
+const showDiagnosisManageModal = ref(false)
+const loadingDiagnoses = ref(false)
+const diagnoses = ref([])
+const editingDiagnosis = ref(null)
+const newDiagnosisName = ref('')
+const newDiagnosisDetail = ref('')
+
+const fetchDiagnoses = async () => {
+  loadingDiagnoses.value = true
+  try {
+    const { data, error } = await supabase
+      .from('diagnosis')
+      .select('id, name, detail')
+      .order('name', { ascending: true })
+    if (error) throw error
+    
+    console.log('Diagnoses from DB:', data)
+    if (data && data.length > 0) {
+      console.log('First diagnosis item:', data[0])
+      console.log('First diagnosis item keys:', Object.keys(data[0]))
+    }
+    
+    diagnoses.value = data || []
+    
+    // Build a completely new, clean array of strings
+    const newOptions = []
+    if (data && Array.isArray(data)) {
+      data.forEach((item, index) => {
+        console.log(`Item ${index}:`, item)
+        if (item && typeof item === 'object' && item !== null) {
+          const name = item.name
+          if (typeof name === 'string' && name.trim().length > 0) {
+            newOptions.push(name.trim())
+          }
+        }
+      })
+    }
+    
+    // Replace the array contents completely instead of reassigning
+    diagnosisOptions.value.splice(0, diagnosisOptions.value.length, ...newOptions)
+    
+    console.log('Final diagnosisOptions:', diagnosisOptions.value)
+    console.log('Is array?', Array.isArray(diagnosisOptions.value))
+  } catch (err) {
+    console.error('Fetch diagnoses error', err)
+    showToast('error', 'โหลดรายชื่อโรคไม่สำเร็จ')
+    diagnosisOptions.value.splice(0, diagnosisOptions.value.length)
+  } finally {
+    loadingDiagnoses.value = false
+  }
+}
+
+const saveDiagnosis = async () => {
+  const name = newDiagnosisName.value.trim()
+  if (!name) {
+    showToast('error', 'กรุณากรอกชื่อโรค')
+    return
+  }
+
+  try {
+    // Get session (same as saveCheckup)
+    const getCookie = (name) => {
+      const v = document.cookie.split('; ').find((row) => row.startsWith(name + '='))
+      return v ? v.split('=')[1] : ''
+    }
+    let session = null
+    try {
+      const raw = getCookie('clinic_tdl_session') || localStorage.getItem('clinic_tdl_session')
+      session = raw ? JSON.parse(decodeURIComponent(raw)) : null
+    } catch { session = null }
+
+    const userId = session?.userId || null
+
+    // Check for duplicates before saving
+    if (!editingDiagnosis.value) {
+      const existing = diagnoses.value.find(d => 
+        d.name && d.name.toLowerCase() === name.toLowerCase()
+      )
+      if (existing) {
+        showToast('error', 'ชื่อโรคนี้มีอยู่แล้ว')
+        return
+      }
+    }
+
+    if (editingDiagnosis.value) {
+      // Update existing - simplest possible query
+      const updateData = {
+        name,
+        detail: newDiagnosisDetail.value.trim() || null
+      }
+      
+      console.log('Updating diagnosis with ID:', editingDiagnosis.value.id)
+      console.log('Update data:', updateData)
+      
+      const { error, count } = await supabase
+        .from('diagnosis')
+        .update(updateData, { count: 'exact' })
+        .eq('id', editingDiagnosis.value.id)
+      
+      console.log('Update response - error:', error)
+      console.log('Update response - count:', count)
+      
+      if (error) throw error
+      if (count === 0) {
+        showToast('error', 'ไม่สามารถอัปเดตข้อมูลได้! กรุณาตรวจสอบ RLS Policy ใน Supabase Dashboard')
+        return
+      }
+      showToast('success', 'อัปเดตโรคสำเร็จ')
+    } else {
+      // Create new - simple data only
+      const insertData = {
+        name,
+        detail: newDiagnosisDetail.value.trim() || null
+      }
+      
+      // Only add created_by/updated_by if we have a valid userId
+      if (userId) {
+        insertData.created_by = userId
+        insertData.updated_by = userId
+      }
+      
+      console.log('Inserting diagnosis:', insertData)
+      
+      const { error } = await supabase
+        .from('diagnosis')
+        .insert(insertData)
+      if (error) throw error
+      showToast('success', 'เพิ่มโรคสำเร็จ')
+    }
+    
+    // Refresh
+    await fetchDiagnoses()
+    closeDiagnosisForm()
+  } catch (err) {
+    console.error('Save diagnosis error', err)
+    showToast('error', 'บันทึกโรคไม่สำเร็จ: ' + (err?.message || 'Unknown error'))
+  }
+}
+
+const editDiagnosis = (diagnosisItem) => {
+  editingDiagnosis.value = diagnosisItem
+  newDiagnosisName.value = diagnosisItem.name
+  newDiagnosisDetail.value = diagnosisItem.detail || ''
+}
+
+const deleteDiagnosis = async (diagnosisItem) => {
+  const ok = await showConfirm({
+    title: 'ยืนยันการลบ',
+    message: `ต้องการลบโรค "${diagnosisItem.name}" หรือไม่?`,
+    type: 'warning'
+  })
+  if (!ok) return
+
+  try {
+    console.log('Deleting diagnosis with ID:', diagnosisItem.id)
+    const { error, count } = await supabase
+      .from('diagnosis')
+      .delete({ count: 'exact' })
+      .eq('id', diagnosisItem.id)
+    
+    console.log('Delete response - error:', error)
+    console.log('Delete response - count:', count)
+    
+    if (error) throw error
+    if (count === 0) {
+      showToast('error', 'ไม่สามารถลบข้อมูลได้! กรุณาตรวจสอบ RLS Policy ใน Supabase Dashboard')
+      return
+    }
+    showToast('success', 'ลบโรคสำเร็จ')
+    await fetchDiagnoses()
+  } catch (err) {
+    console.error('Delete diagnosis error', err)
+    showToast('error', 'ลบโรคไม่สำเร็จ: ' + (err?.message || 'Unknown error'))
+  }
+}
+
+const closeDiagnosisForm = () => {
+  editingDiagnosis.value = null
+  newDiagnosisName.value = ''
+  newDiagnosisDetail.value = ''
+}
 const vitalHelperConfigs = {
   bp: {
     title: 'BP',
@@ -70,12 +238,41 @@ const isHaveConditions = ref(false)
 const drugAllergyText = ref('')
 const congenitalDiseaseText = ref('')
 
-const toTitleCaseEng = (s) =>
-  (s || '').replace(/\b([A-Za-z])([A-Za-z]*)\b/g, (_, a, b) => a.toUpperCase() + b.toLowerCase())
+const toTitleCaseEng = (s) => {
+  const str = typeof s === 'string' ? s : ''
+  return str.replace(/\b([A-Za-z])([A-Za-z]*)\b/g, (_, a, b) => a.toUpperCase() + b.toLowerCase())
+}
 const filteredDiagnosisOptions = computed(() => {
-  const keyword = String(diagnosis.value || '').trim().toLowerCase()
-  if (!keyword) return diagnosisOptions
-  return diagnosisOptions.filter((option) => option.toLowerCase().includes(keyword))
+  try {
+    const keyword = typeof diagnosis.value === 'string' 
+      ? diagnosis.value.trim().toLowerCase() 
+      : ''
+    
+    // First make sure we only work with valid arrays
+    const safeOptions = Array.isArray(diagnosisOptions.value) 
+      ? diagnosisOptions.value 
+      : []
+    
+    // Filter to only valid string options
+    const validOptions = safeOptions.filter(opt => 
+      typeof opt === 'string' && opt.trim() !== ''
+    )
+    
+    if (!keyword) {
+      return validOptions
+    }
+    
+    return validOptions.filter((option) => {
+      try {
+        return typeof option === 'string' && option.toLowerCase().includes(keyword)
+      } catch {
+        return false
+      }
+    })
+  } catch (err) {
+    console.error('filteredDiagnosisOptions error', err)
+    return []
+  }
 })
 const openDiagnosisOptions = () => {
   if (diagnosisBlurTimer) {
@@ -96,11 +293,17 @@ const selectDiagnosisOption = (option) => {
     clearTimeout(diagnosisBlurTimer)
     diagnosisBlurTimer = null
   }
-  diagnosis.value = option
+  if (typeof option === 'string') {
+    diagnosis.value = option
+  }
   showDiagnosisOptions.value = false
 }
 const formatDiagnosisOnBlur = () => {
-  diagnosis.value = toTitleCaseEng(diagnosis.value || '')
+  try {
+    diagnosis.value = toTitleCaseEng(diagnosis.value)
+  } catch (err) {
+    console.error('formatDiagnosisOnBlur error', err)
+  }
 }
 const openVitalHelper = (field) => {
   if (vitalHelperBlurTimer) {
@@ -764,6 +967,10 @@ watch([leaveStart, leaveEnd], () => {
   const days = Math.floor(ms / 86400000) + 1
   totalLeaveDays.value = String(days)
 })
+
+onMounted(() => {
+  fetchDiagnoses()
+})
 </script>
 
 <template>
@@ -1081,21 +1288,31 @@ watch([leaveStart, leaveEnd], () => {
               ></textarea>
               <div
                 v-if="showDiagnosisOptions"
+                :key="showDiagnosisOptions + '-' + filteredDiagnosisOptions.length"
                 class="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 shadow-xl"
               >
-                <div class="border-b border-clinic-border dark:border-slate-700 px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400">
-                  เลือกโรคที่ใช้บ่อย หรือพิมพ์เองได้
+                <div class="border-b border-clinic-border dark:border-slate-700 px-3 py-2 flex items-center justify-between">
+                  <span class="text-[11px] text-slate-500 dark:text-slate-400">
+                    เลือกโรคที่ใช้บ่อย หรือพิมพ์เองได้
+                  </span>
+                  <button 
+                    type="button" 
+                    @mousedown.prevent="showDiagnosisManageModal = true; showDiagnosisOptions = false"
+                    class="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md transition-colors"
+                  >
+                    <i class="fa-solid fa-gear mr-0.5"></i> จัดการ
+                  </button>
                 </div>
                 <div class="max-h-56 overflow-y-auto p-2 space-y-1">
                   <button
-                    v-for="option in filteredDiagnosisOptions"
-                    :key="option"
+                    v-for="(option, index) in filteredDiagnosisOptions"
+                    :key="'diagnosis-option-' + index + '-' + (typeof option === 'string' ? option : index)"
                     type="button"
                     class="w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors"
-                    :class="option === diagnosis ? 'bg-clinic-blue text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
-                    @mousedown.prevent="selectDiagnosisOption(option)"
+                    :class="typeof option === 'string' && option === diagnosis ? 'bg-clinic-blue text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'"
+                    @mousedown.prevent="typeof option === 'string' && selectDiagnosisOption(option)"
                   >
-                    {{ option }}
+                    {{ typeof option === 'string' ? option : '' }}
                   </button>
                   <div
                     v-if="!filteredDiagnosisOptions.length"
@@ -1352,6 +1569,99 @@ watch([leaveStart, leaveEnd], () => {
           <i class="fa-solid fa-floppy-disk"></i>
           <span>{{ saving ? 'Saving...' : 'Save checkup & dispensing' }}</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diagnosis Management Modal -->
+  <div v-if="showDiagnosisManageModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+      <div class="p-4 border-b border-clinic-border dark:border-slate-700 flex items-center justify-between">
+        <h3 class="text-lg font-bold text-slate-800 dark:text-white">จัดการชื่อโรค</h3>
+        <button @click="showDiagnosisManageModal = false; closeDiagnosisForm()" class="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      
+      <div class="p-4 border-b border-clinic-border dark:border-slate-700 space-y-3">
+        <h4 class="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {{ editingDiagnosis ? 'แก้ไขโรค' : 'เพิ่มโรคใหม่' }}
+        </h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium mb-1">ชื่อโรค</label>
+            <input 
+              v-model="newDiagnosisName" 
+              type="text" 
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              placeholder="ชื่อโรค"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1">รายละเอียด</label>
+            <input 
+              v-model="newDiagnosisDetail" 
+              type="text" 
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              placeholder="รายละเอียด (ถ้ามี)"
+            />
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button 
+            @click="saveDiagnosis"
+            class="px-4 py-2 bg-clinic-blue text-white rounded-lg text-xs font-medium hover:bg-blue-700"
+          >
+            <i class="fa-solid fa-save mr-1"></i>
+            {{ editingDiagnosis ? 'อัปเดต' : 'เพิ่ม' }}
+          </button>
+          <button 
+            v-if="editingDiagnosis"
+            @click="closeDiagnosisForm"
+            class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium hover:bg-slate-300 dark:hover:bg-slate-600"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+      
+      <div class="flex-1 overflow-y-auto p-4">
+        <h4 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">รายการโรคทั้งหมด</h4>
+        <div v-if="loadingDiagnoses" class="text-center py-8 text-slate-500">
+          <i class="fa-solid fa-spinner fa-spin text-xl"></i>
+          <p class="text-xs mt-2">กำลังโหลด...</p>
+        </div>
+        <div v-else-if="!diagnoses.length" class="text-center py-8 text-slate-500">
+          <p class="text-xs">ยังไม่มีรายการโรค</p>
+        </div>
+        <div v-else class="space-y-2">
+          <div 
+            v-for="d in diagnoses" 
+            :key="d.id"
+            class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg"
+          >
+            <div class="flex flex-col">
+              <span class="text-sm font-medium text-slate-800 dark:text-slate-200">{{ d.name }}</span>
+              <span v-if="d.detail" class="text-[11px] text-slate-500">{{ d.detail }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button 
+                @click="editDiagnosis(d)"
+                class="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg"
+                title="แก้ไข"
+              >
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button 
+                @click="deleteDiagnosis(d)"
+                class="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                title="ลบ"
+              >
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

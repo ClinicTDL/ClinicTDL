@@ -98,6 +98,15 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 
+8. diagnosis
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    detail TEXT,
+    created_by uuid (REF with system_users.id),
+    updated_by uuid (REF with system_users.id),
+    created_at timestamp,
+    updated_at timestamp
+
 
 
 */ Spacial command for (medicine_import_logs) table:

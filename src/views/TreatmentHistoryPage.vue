@@ -1131,7 +1131,7 @@ const getThumb = (u) => {
       </div>
       <table class="min-w-full text-xs">
         <thead>
-          <tr class="text-left text-slate-500 border-b border-clinic-border dark:border-slate-700">
+          <tr class="text-left text-slate-500 dark:text-slate-300 border-b border-clinic-border dark:border-slate-700">
             <th class="py-2 pr-3 text-center">วันที่</th>
             <!-- <th class="py-2 pr-3">รหัสพนักงาน</th> -->
             <th class="py-2 pr-3 text-center">ชื่อ-นามสกุล</th>
