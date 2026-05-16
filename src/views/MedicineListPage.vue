@@ -8,6 +8,58 @@ const getCookie = (name) => {
   const v = document.cookie.split('; ').find((row) => row.startsWith(name + '='))
   return v ? v.split('=')[1] : ''
 }
+
+const calculateTimeRemaining = (expDateStr) => {
+  if (!expDateStr) return null
+  
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expDate = new Date(expDateStr)
+  expDate.setHours(0, 0, 0, 0)
+  
+  const diffTime = expDate - today
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  
+  if (diffDays < 0) return { text: 'หมดอายุแล้ว', color: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-900/20', days: diffDays }
+  
+  const years = Math.floor(diffDays / 365)
+  const remainingDays = diffDays % 365
+  const months = Math.floor(remainingDays / 30)
+  const days = remainingDays % 30
+  
+  let text = ''
+  if (years > 0) text += `${years} ปี `
+  if (months > 0) text += `${months} เดือน `
+  if (days > 0) text += `${days} วัน`
+  
+  let color, bgColor
+  if (diffDays <= 60) {
+    color = 'text-red-600 dark:text-red-400'
+    bgColor = 'bg-red-50 dark:bg-red-900/20'
+  } else if (diffDays <= 180) {
+    color = 'text-orange-600 dark:text-orange-400'
+    bgColor = 'bg-orange-50 dark:bg-orange-900/20'
+  } else if (diffDays <= 365) {
+    color = 'text-yellow-600 dark:text-yellow-400'
+    bgColor = 'bg-yellow-50 dark:bg-yellow-900/20'
+  } else {
+    color = 'text-emerald-600 dark:text-emerald-400'
+    bgColor = 'bg-emerald-50 dark:bg-emerald-900/20'
+  }
+  
+  return { text: text.trim() || `${diffDays} วัน`, color, bgColor, days: diffDays }
+}
+
+const isExpiringSoon = (expDateStr) => {
+  if (!expDateStr) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expDate = new Date(expDateStr)
+  expDate.setHours(0, 0, 0, 0)
+  const diffTime = expDate - today
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays >= 0 && diffDays <= 60
+}
 let session = null
 try {
   const raw = getCookie('clinic_tdl_session') || localStorage.getItem('clinic_tdl_session')
@@ -62,6 +114,8 @@ const editForm = ref({
   group: '',
   indication: '',
   side_effect: '',
+  mfg_date: '',
+  exp_date: '',
 })
 
 const openEditSidebar = (m) => {
@@ -74,6 +128,8 @@ const openEditSidebar = (m) => {
     group: m.group || '',
     indication: m.indication || '',
     side_effect: m.side_effect || '',
+    mfg_date: m.mfg_date || '',
+    exp_date: m.exp_date || '',
   }
   showEditSidebar.value = true
 }
@@ -95,6 +151,10 @@ const saveEdit = async () => {
       .update({
         indication: editForm.value.indication || null,
         side_effect: editForm.value.side_effect || null,
+        mfg_date: editForm.value.mfg_date || null,
+        exp_date: editForm.value.exp_date || null,
+        updated_by: session.userId,
+        updated_at: new Date().toISOString()
       })
       .eq('id', editForm.value.id)
     if (error) throw error
@@ -102,7 +162,7 @@ const saveEdit = async () => {
     showEditSidebar.value = false
     loadMedicines()
   } catch (e) {
-    console.error('Update indication/side_effect error', e)
+    console.error('Update medicine error', e)
     showToast('error', 'บันทึกไม่สำเร็จ')
   } finally {
     loading.value = false
@@ -231,7 +291,7 @@ const loadMedicines = async () => {
     // --- Base data for filters and notifications ---
     const { data: allData, error: allError } = await supabase
       .from('medicine_list')
-      .select('id, sku, name, unit, group, current_stock')
+      .select('id, sku, name, unit, group, current_stock, mfg_date, exp_date')
     if (allError) throw allError
 
     const unitSet = new Set((allData || []).map((m) => (m.unit || '').toString().trim()).filter((v) => !!v))
@@ -243,11 +303,18 @@ const loadMedicines = async () => {
       (m?.group || '').toString().trim() !== 'เครื่องมือแพทย์' &&
       Number(m?.current_stock || 0) <= Number(lowStockThreshold.value || 10)
     )
-    const items = lows.map(m => ({
-      type: 'low_stock',
-      text: `${m.sku ? `[${m.sku}] ` : ''}${m.name} เหลือ ${Number(m.current_stock || 0)} ${m.unit || ''}`,
-      id: m.id
-    }))
+    const items = [
+      ...lows.map(m => ({
+        type: 'low_stock',
+        text: `${m.sku ? `[${m.sku}] ` : ''}${m.name} เหลือ ${Number(m.current_stock || 0)} ${m.unit || ''}`,
+        id: m.id
+      })),
+      ...(allData || []).filter(m => isExpiringSoon(m.exp_date)).map(m => ({
+        type: 'expiring',
+        text: `${m.sku ? `[${m.sku}] ` : ''}${m.name} จะหมดอายุในอีก ${calculateTimeRemaining(m.exp_date)?.text || 'ไม่กี่วัน'}`,
+        id: `${m.id}-expiring`
+      }))
+    ]
     try {
       const { count: pendCount } = await supabase
         .from('medicine_import_logs')
@@ -589,6 +656,9 @@ onMounted(loadMedicines)
             <th class="py-2 pr-3">ชื่อ</th>
             <th class="py-2 pr-3">คงเหลือปัจจุบัน</th>
             <th class="py-2 pr-3">ประเภท</th>
+            <th class="py-2 pr-3">วันผลิต</th>
+            <th class="py-2 pr-3">วันหมดอายุ</th>
+            <th class="py-2 pr-3">เหลือเวลา</th>
             <th class="py-2 pr-3">สรรพคุณ</th>
             <th class="py-2 pr-3">ผลข้างเคียง</th>
             <th class="py-2 pr-3">ผู้เพิ่ม</th>
@@ -599,7 +669,7 @@ onMounted(loadMedicines)
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="10" class="py-8 text-center">
+            <td colspan="13" class="py-8 text-center">
               <div class="flex flex-col items-center gap-2">
                 <i class="fa-solid fa-circle-notch fa-spin text-2xl text-clinic-blue dark:text-blue-200"></i>
                 <span class="text-slate-500 animate-pulse">กำลังโหลดข้อมูล...</span>
@@ -615,6 +685,14 @@ onMounted(loadMedicines)
               </span>
             </td>
             <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.group || '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.mfg_date ? new Date(m.mfg_date).toLocaleDateString('en-UK') : '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.exp_date ? new Date(m.exp_date).toLocaleDateString('en-UK') : '-' }}</td>
+            <td class="py-1.5 pr-3">
+              <span v-if="calculateTimeRemaining(m.exp_date)" :class="['px-2 py-0.5 rounded-full text-xs font-medium', calculateTimeRemaining(m.exp_date).bgColor, calculateTimeRemaining(m.exp_date).color]">
+                {{ calculateTimeRemaining(m.exp_date).text }}
+              </span>
+              <span v-else class="text-slate-400">-</span>
+            </td>
             <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.indication || '-' }}</td>
             <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.side_effect || '-' }}</td>
             <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.creator?.full_name || '-' }}</td>
@@ -631,7 +709,7 @@ onMounted(loadMedicines)
             </td>
           </tr>
           <tr v-if="!loading && !medicines.length">
-            <td colspan="10" class="py-8 text-center text-slate-400">
+            <td colspan="13" class="py-8 text-center text-slate-400">
               ไม่พบรายการยาในคลัง
             </td>
           </tr>
@@ -790,6 +868,16 @@ onMounted(loadMedicines)
             <div>
               <label class="block text-xs font-medium mb-1">คงเหลือ</label>
               <input :value="editForm.current_stock" type="text" readonly class="w-full rounded-lg border p-2 text-sm bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium mb-1">วันผลิต</label>
+              <input v-model="editForm.mfg_date" type="date" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium mb-1">วันหมดอายุ</label>
+              <input v-model="editForm.exp_date" type="date" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue" />
             </div>
           </div>
           <div>

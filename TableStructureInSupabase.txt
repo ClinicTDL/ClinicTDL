@@ -40,7 +40,9 @@ LIST OF TABLE IN SUPABASE(name of column and data type)
     created_by uuid (REF with system_users.id),
     updated_by uuid (REF with system_users.id),
     created_at timestamp,
-    updated_at timestamp
+    updated_at timestamp,
+    mfg_date date,
+    exp_date date
 
 4. stock_transactions
     id uuid,
