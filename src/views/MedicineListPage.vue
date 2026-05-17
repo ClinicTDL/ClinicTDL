@@ -306,12 +306,12 @@ const loadMedicines = async () => {
     const items = [
       ...lows.map(m => ({
         type: 'low_stock',
-        text: `${m.sku ? `[${m.sku}] ` : ''}${m.name} เหลือ ${Number(m.current_stock || 0)} ${m.unit || ''}`,
+        text: `${m.sku ? `` : ''}${m.name} เหลือ ${Number(m.current_stock || 0)} ${m.unit || ''}`,
         id: m.id
       })),
       ...(allData || []).filter(m => isExpiringSoon(m.exp_date)).map(m => ({
         type: 'expiring',
-        text: `${m.sku ? `[${m.sku}] ` : ''}${m.name} จะหมดอายุในอีก ${calculateTimeRemaining(m.exp_date)?.text || 'ไม่กี่วัน'}`,
+        text: `${m.sku ? `` : ''}${m.name} จะหมดอายุในอีก ${calculateTimeRemaining(m.exp_date)?.text || 'ไม่กี่วัน'}`,
         id: `${m.id}-expiring`
       }))
     ]
@@ -652,12 +652,12 @@ onMounted(loadMedicines)
       <table class="min-w-full text-xs">
         <thead>
           <tr class="text-left text-slate-500 dark:text-slate-400 border-b border-clinic-border dark:border-slate-700">
-            <th class="py-2 pr-3">SKU</th>
+            <!-- <th class="py-2 pr-3">SKU</th> -->
             <th class="py-2 pr-3">ชื่อ</th>
             <th class="py-2 pr-3">คงเหลือปัจจุบัน</th>
             <th class="py-2 pr-3">ประเภท</th>
-            <th class="py-2 pr-3">วันผลิต</th>
-            <th class="py-2 pr-3">วันหมดอายุ</th>
+            <th class="py-2 pr-3">วันผลิต-วันหมดอายุ</th>
+            <!-- <th class="py-2 pr-3">วันหมดอายุ</th> -->
             <th class="py-2 pr-3">เหลือเวลา</th>
             <th class="py-2 pr-3">สรรพคุณ</th>
             <th class="py-2 pr-3">ผลข้างเคียง</th>
@@ -677,16 +677,26 @@ onMounted(loadMedicines)
             </td>
           </tr>
           <tr v-else v-for="m in medicines" :key="m.id" class="border-b border-clinic-border/60 dark:border-slate-800">
-            <td class="py-1.5 pr-3 text-slate-400">{{ m.sku || '-' }}</td>
-            <td class="py-1.5 pr-3 font-medium">{{ m.name }}</td>
+            <!-- <td class="py-1.5 pr-3 text-slate-400">{{ m.sku || '-' }}</td> -->
+            <td class="py-1.5 pr-3 font-medium">
+              <div class="font-medium text-slate-900 dark:text-slate-100">
+                {{ m.name || '-'}}
+              </div>
+              <div class="text-[10px] text-slate-400">
+                [ {{ m.sku || '-' }} ]
+              </div>
+            </td>
             <td class="py-1.5 pr-3">
               <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
                 {{ m.current_stock }} {{ m.unit }}
               </span>
             </td>
             <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.group || '-' }}</td>
-            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.mfg_date ? new Date(m.mfg_date).toLocaleDateString('en-UK') : '-' }}</td>
-            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.exp_date ? new Date(m.exp_date).toLocaleDateString('en-UK') : '-' }}</td>
+            <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">
+              {{ m.mfg_date ? new Date(m.mfg_date).toLocaleDateString('en-UK', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '' }} - 
+              {{ m.exp_date ? new Date(m.exp_date).toLocaleDateString('en-UK', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '' }}
+            </td>
+            <!-- <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-300">{{ m.exp_date ? new Date(m.exp_date).toLocaleDateString('en-UK') : '-' }}</td> -->
             <td class="py-1.5 pr-3">
               <span v-if="calculateTimeRemaining(m.exp_date)" :class="['px-2 py-0.5 rounded-full text-xs font-medium', calculateTimeRemaining(m.exp_date).bgColor, calculateTimeRemaining(m.exp_date).color]">
                 {{ calculateTimeRemaining(m.exp_date).text }}

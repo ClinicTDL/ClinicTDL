@@ -3,12 +3,13 @@ import { computed, onMounted, onUnmounted, ref, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../supabaseClient'
 import bcrypt from 'bcryptjs'
-import { notifications } from '../stores/notifications'
+import { notifications, setNotifications } from '../stores/notifications'
 
 const router = useRouter()
 
 const now = ref(new Date())
 let intervalId
+let notificationIntervalId
 
 const theme = ref(localStorage.getItem('clinic_tdl_theme') || 'light')
 
@@ -62,6 +63,100 @@ const applyTheme = (mode) => {
 const toggleTheme = () => {
   theme.value = theme.value === 'light' ? 'dark' : 'light'
   applyTheme(theme.value)
+}
+
+const calculateTimeRemaining = (expDateStr) => {
+  if (!expDateStr) return null
+  
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expDate = new Date(expDateStr)
+  expDate.setHours(0, 0, 0, 0)
+  
+  const diffTime = expDate - today
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  
+  if (diffDays < 0) return { text: 'หมดอายุแล้ว', color: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-900/20', days: diffDays }
+  
+  const years = Math.floor(diffDays / 365)
+  const remainingDays = diffDays % 365
+  const months = Math.floor(remainingDays / 30)
+  const days = remainingDays % 30
+  
+  let text = ''
+  if (years > 0) text += `${years} ปี `
+  if (months > 0) text += `${months} เดือน `
+  if (days > 0) text += `${days} วัน`
+  
+  let color, bgColor
+  if (diffDays <= 60) {
+    color = 'text-red-600 dark:text-red-400'
+    bgColor = 'bg-red-50 dark:bg-red-900/20'
+  } else if (diffDays <= 180) {
+    color = 'text-orange-600 dark:text-orange-400'
+    bgColor = 'bg-orange-50 dark:bg-orange-900/20'
+  } else if (diffDays <= 365) {
+    color = 'text-yellow-600 dark:text-yellow-400'
+    bgColor = 'bg-yellow-50 dark:bg-yellow-900/20'
+  } else {
+    color = 'text-emerald-600 dark:text-emerald-400'
+    bgColor = 'bg-emerald-50 dark:bg-emerald-900/20'
+  }
+  
+  return { text: text.trim() || `${diffDays} วัน`, color, bgColor, days: diffDays }
+}
+
+const isExpiringSoon = (expDateStr) => {
+  if (!expDateStr) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expDate = new Date(expDateStr)
+  expDate.setHours(0, 0, 0, 0)
+  const diffTime = expDate - today
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays >= 0 && diffDays <= 60
+}
+
+const loadNotifications = async () => {
+  try {
+    const { data: allData, error: allError } = await supabase
+      .from('medicine_list')
+      .select('id, sku, name, unit, group, current_stock, mfg_date, exp_date')
+    if (allError) throw allError
+
+    const lows = (allData || []).filter((m) =>
+      (m?.group || '').toString().trim() !== 'เครื่องมือแพทย์' &&
+      Number(m?.current_stock || 0) <= 10
+    )
+    const items = [
+      ...lows.map(m => ({
+        type: 'low_stock',
+        text: `${m.sku ? `` : ''}${m.name} เหลือ ${Number(m.current_stock || 0)} ${m.unit || ''}`,
+        id: m.id
+      })),
+      ...(allData || []).filter(m => isExpiringSoon(m.exp_date)).map(m => ({
+        type: 'expiring',
+        text: `${m.sku ? `[${m.sku}] ` : ''}${m.name} จะหมดอายุในอีก ${calculateTimeRemaining(m.exp_date)?.text || 'ไม่กี่วัน'}`,
+        id: `${m.id}-expiring`
+      }))
+    ]
+    try {
+      const { count: pendCount } = await supabase
+        .from('medicine_import_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending')
+      if ((pendCount || 0) > 0) {
+        items.unshift({
+          type: 'pending_imports',
+          text: `มีรายการที่รอการยืนยัน ${pendCount} รายการ — ไปที่ "รายการยา" เพื่อยืนยันสต๊อกจากฝ่ายจัดซื้อ`,
+          id: 'pending_imports'
+        })
+      }
+    } catch {}
+    setNotifications(items)
+  } catch (e) {
+    console.error('Failed to load notifications', e)
+  }
 }
 
 onMounted(() => {
@@ -310,11 +405,14 @@ onMounted(() => {
   
   if (user.value) {
     loadProfileImage()
+    loadNotifications()
+    notificationIntervalId = setInterval(loadNotifications, 60000)
   }
 })
 
 onUnmounted(() => {
   if (intervalId) clearInterval(intervalId)
+  if (notificationIntervalId) clearInterval(notificationIntervalId)
 })
 </script>
 
