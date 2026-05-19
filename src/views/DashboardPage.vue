@@ -1954,13 +1954,13 @@ const exportDashboardPdf = async () => {
                   <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">จำนวนผู้ป่วย</div>
                   <div class="mt-3 text-center border-t border-clinic-blue/20 pt-3 w-full">
                     <div class="text-2xl font-black text-amber-600 mb-1">{{ selectedDeptLeaveCount }}</div>
-                    <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">ลาพัก</div>
+                    <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">ลาพัก (จากพนักงานทั้งหมด)</div>
                     <div class="mt-1">
-                      <div :class="getRiskInfo(selectedDeptPatientCount > 0 ? ((selectedDeptLeaveCount / selectedDeptPatientCount) * 100) : 0).color" class="text-xl font-black">
-                        {{ selectedDeptPatientCount > 0 ? ((selectedDeptLeaveCount / selectedDeptPatientCount) * 100).toFixed(1) : 0 }}%
+                      <div :class="getRiskInfo(selectedDeptEmployeeCount > 0 ? ((selectedDeptLeaveCount / selectedDeptEmployeeCount) * 100) : 0).color" class="text-xl font-black">
+                        {{ selectedDeptEmployeeCount > 0 ? ((selectedDeptLeaveCount / selectedDeptEmployeeCount) * 100).toFixed(1) : 0 }}%
                       </div>
-                      <div :class="getRiskInfo(selectedDeptPatientCount > 0 ? ((selectedDeptLeaveCount / selectedDeptPatientCount) * 100) : 0).color" class="text-[10px] font-semibold">
-                        {{ getRiskInfo(selectedDeptPatientCount > 0 ? ((selectedDeptLeaveCount / selectedDeptPatientCount) * 100) : 0).text }}
+                      <div :class="getRiskInfo(selectedDeptEmployeeCount > 0 ? ((selectedDeptLeaveCount / selectedDeptEmployeeCount) * 100) : 0).color" class="text-[10px] font-semibold">
+                        {{ getRiskInfo(selectedDeptEmployeeCount > 0 ? ((selectedDeptLeaveCount / selectedDeptEmployeeCount) * 100) : 0).text }}
                       </div>
                     </div>
                   </div>
