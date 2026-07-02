@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { supabase } from '../supabaseClient'
 import { Line, Bar } from 'vue-chartjs'
 import {
@@ -103,6 +103,13 @@ const showLeaveModal = ref(false)
 const selectedLeaveDept = ref('')
 const leaveDetails = ref([])
 const loadingLeaveDetails = ref(false)
+
+const totalLeaveDays = computed(() => {
+  return leaveDetails.value.reduce((total, row) => {
+    const days = Number(row.days) || 0
+    return total + days
+  }, 0)
+})
 
 const showDiagModal = ref(false)
 const selectedDiagName = ref('')
@@ -2356,8 +2363,8 @@ const exportDashboardPdf = async () => {
                   </div>
                 </div>
                 <div class="text-right">
-                  <div class="text-2xl font-black text-amber-600 dark:text-amber-400">{{ leaveDetails.length }}</div>
-                  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ครั้งที่ลา</div>
+                  <div class="text-2xl font-black text-amber-600 dark:text-amber-400">{{ totalLeaveDays }}</div>
+                  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">วันลารวม</div>
                 </div>
               </div>
 
