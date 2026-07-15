@@ -37,8 +37,10 @@ const pendingImports = ref([])
 
 // Sidebar State
 const showSidebar = ref(false)
-const sidebarMode = ref('add') // 'add' | 'restock'
+const sidebarMode = ref('add') // 'add' | 'restock' | 'edit'
 const selectedMedicine = ref(null)
+const selectedEditItem = ref(null)
+const originalEditData = ref(null)
 
 // Form Data
 const formData = ref({
@@ -48,6 +50,22 @@ const formData = ref({
   quantity: 0,
   category: 'ยาทั่วไป',
   remark: ''
+})
+
+// Check if form data changed
+const hasUnsavedChanges = computed(() => {
+  if (sidebarMode.value !== 'edit' || !originalEditData.value) return false
+  
+  const currentNote = sidebarMode.value === 'edit' && !selectedEditItem.value?.medicine_id 
+    ? JSON.stringify({
+        name: formData.value.name,
+        sku: formData.value.sku,
+        unit: formData.value.unit
+      }) 
+    : null
+  
+  return JSON.stringify(formData.value) !== JSON.stringify(originalEditData.value.formData) ||
+         (currentNote !== originalEditData.value.note)
 })
 
 const loadMedicines = async () => {
@@ -133,6 +151,9 @@ const openPending = async () => {
 
 const openAddSidebar = () => {
   sidebarMode.value = 'add'
+  selectedMedicine.value = null
+  selectedEditItem.value = null
+  originalEditData.value = null
   formData.value = {
     name: '',
     sku: '',
@@ -141,13 +162,14 @@ const openAddSidebar = () => {
     category: 'ยาทั่วไป',
     remark: ''
   }
-  selectedMedicine.value = null
   showSidebar.value = true
 }
 
 const openRestockSidebar = (medicine) => {
   sidebarMode.value = 'restock'
   selectedMedicine.value = medicine
+  selectedEditItem.value = null
+  originalEditData.value = null
   formData.value = {
     name: medicine.name,
     sku: medicine.sku || '',
@@ -159,8 +181,108 @@ const openRestockSidebar = (medicine) => {
   showSidebar.value = true
 }
 
-const closeSidebar = () => {
+const openEdit = (item) => {
+  sidebarMode.value = 'edit'
+  selectedEditItem.value = item
+  selectedMedicine.value = item.medicine || null
+  
+  const noteData = safeParse(item.note)
+  
+  formData.value = {
+    name: item.medicine?.name || noteData?.name || '',
+    sku: item.medicine?.sku || noteData?.sku || '',
+    unit: item.medicine?.unit || noteData?.unit || '',
+    quantity: item.quantity,
+    category: item.category,
+    remark: item.remark || ''
+  }
+  
+  originalEditData.value = {
+    formData: { ...formData.value },
+    note: item.note
+  }
+  
+  showPendingModal.value = false
+  showSidebar.value = true
+}
+
+const saveEdit = async () => {
+  try {
+    if (!session || !session.userId) {
+      showToast('error', 'กรุณาเข้าสู่ระบบก่อน')
+      return
+    }
+
+    if (!selectedEditItem.value) {
+      showToast('error', 'ไม่พบรายการที่จะแก้ไข')
+      return
+    }
+
+    if (selectedEditItem.value.medicine_id) {
+      // Restock mode - quantity and remark only
+      if (formData.value.quantity <= 0) {
+        showToast('error', 'กรุณากรอกจำนวนมากกว่า 0')
+        return
+      }
+    } else {
+      // Add new mode - check required fields
+      if (!formData.value.name || !formData.value.unit || formData.value.quantity <= 0) {
+        showToast('error', 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน')
+        return
+      }
+    }
+
+    loading.value = true
+    
+    const updateData = {
+      quantity: formData.value.quantity,
+      category: formData.value.category,
+      remark: formData.value.remark,
+      updated_at: new Date()
+    }
+
+    // Update note if it's a new medicine item
+    if (!selectedEditItem.value.medicine_id) {
+      updateData.note = JSON.stringify({
+        name: formData.value.name,
+        sku: formData.value.sku,
+        unit: formData.value.unit
+      })
+    }
+
+    const { error } = await supabase
+      .from('medicine_import_logs')
+      .update(updateData)
+      .eq('id', selectedEditItem.value.id)
+
+    if (error) throw error
+
+    showToast('success', 'แก้ไขข้อมูลสำเร็จ')
+    closeSidebar()
+    await loadPendingImports()
+  } catch (err) {
+    console.error('Save edit error', err)
+    showToast('error', 'เกิดข้อผิดพลาด: ' + err.message)
+  } finally {
+    loading.value = false
+  }
+}
+
+const closeSidebar = async () => {
+  if (sidebarMode.value === 'edit' && hasUnsavedChanges.value) {
+    const confirmed = await showConfirm({
+      title: 'ยืนยันการออก',
+      message: 'คุณมีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก ต้องการทิ้งการแก้ไขหรือไม่?'
+    })
+    if (!confirmed) {
+      return
+    }
+  }
+  
   showSidebar.value = false
+  selectedEditItem.value = null
+  originalEditData.value = null
+  sidebarMode.value = 'add'
 }
 
 const handleSaveRequest = async () => {
@@ -339,20 +461,34 @@ onMounted(loadMedicines)
     <div v-if="showSidebar" class="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" @click.self="closeSidebar">
       <div class="w-full max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl p-6 flex flex-col">
         <div class="flex items-center justify-between mb-6">
-          <h2 class="text-lg font-semibold">{{ sidebarMode === 'add' ? 'เพิ่มยาใหม่' : 'เติมสต็อก' }}</h2>
+          <h2 class="text-lg font-semibold">
+            {{ sidebarMode === 'add' ? 'เพิ่มยาใหม่' : (sidebarMode === 'restock' ? 'เติมสต็อก' : 'แก้ไขรายการ') }}
+          </h2>
           <button @click="closeSidebar" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-lg"></i></button>
         </div>
 
         <div class="flex-1 space-y-4 overflow-y-auto">
           <div>
             <label class="block text-xs font-medium mb-1">SKU</label>
-            <input v-model="formData.sku" placeholder="เช่น CN-9..." type="text" :readonly="sidebarMode === 'restock'" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" />
+            <input 
+              v-model="formData.sku" 
+              placeholder="เช่น CN-9..." 
+              type="text" 
+              :readonly="sidebarMode === 'restock' || (sidebarMode === 'edit' && selectedEditItem?.medicine_id)" 
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" 
+            />
           </div>
           <div>
             <label class="block text-xs font-medium mb-1">ชื่อยา</label>
-            <input v-model="formData.name" placeholder="เช่น Paracetamol..." type="text" :readonly="sidebarMode === 'restock'" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" />
+            <input 
+              v-model="formData.name" 
+              placeholder="เช่น Paracetamol..." 
+              type="text" 
+              :readonly="sidebarMode === 'restock' || (sidebarMode === 'edit' && selectedEditItem?.medicine_id)" 
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800" 
+            />
           </div>
-          <div v-if="sidebarMode === 'add'">
+          <div v-if="sidebarMode === 'add' || (sidebarMode === 'edit' && !selectedEditItem?.medicine_id)">
             <label class="block text-xs font-medium mb-1">หน่วย</label>
             <select
               v-model="formData.unit"
@@ -373,7 +509,11 @@ onMounted(loadMedicines)
           </div>
           <div>
             <label class="block text-xs font-medium mb-1">หมวดหมู่</label>
-            <select v-model="formData.category" :disabled="sidebarMode === 'restock'" class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed">
+            <select 
+              v-model="formData.category" 
+              :disabled="sidebarMode === 'restock' || (sidebarMode === 'edit' && selectedEditItem?.medicine_id)" 
+              class="w-full rounded-lg border border-clinic-border dark:border-slate-600 p-2 text-sm dark:bg-slate-800 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
+            >
               <option value="ยาทั่วไป">ยาทั่วไป</option>
               <option value="เครื่องมือแพทย์">เครื่องมือแพทย์</option>
             </select>
@@ -390,8 +530,12 @@ onMounted(loadMedicines)
 
         <div class="pt-4 mt-4 border-t border-clinic-border dark:border-slate-600 flex gap-3">
           <button @click="closeSidebar" class="flex-1 p-2 rounded-lg border border-clinic-border dark:border-slate-600">ยกเลิก</button>
-          <button @click="handleSaveRequest" :disabled="loading" class="flex-1 p-2 rounded-lg bg-clinic-blue text-white disabled:opacity-50">
-            {{ loading ? 'กำลังบันทึก...' : 'ส่งคำขออนุมัติ' }}
+          <button 
+            @click="sidebarMode === 'edit' ? saveEdit() : handleSaveRequest()" 
+            :disabled="loading" 
+            class="flex-1 p-2 rounded-lg bg-clinic-blue text-white disabled:opacity-50"
+          >
+            {{ loading ? 'กำลังบันทึก...' : (sidebarMode === 'edit' ? 'บันทึกการแก้ไข' : 'ส่งคำขออนุมัติ') }}
           </button>
         </div>
       </div>
@@ -414,6 +558,7 @@ onMounted(loadMedicines)
                 <th class="pb-3 text-center">สถานะ</th>
                 <th class="pb-3 text-center">เหตุผล</th>
                 <th class="pb-3 text-center">ผู้แจ้ง</th>
+                <th class="pb-3 text-center">ดำเนินการ</th>
               </tr>
             </thead>
             <tbody class="divide-y">
@@ -445,9 +590,18 @@ onMounted(loadMedicines)
                 </td>
                 <td class="py-3 text-center text-slate-500">{{ item.remark || '-' }}</td>
                 <td class="py-3 text-center text-slate-500">{{ item.requester?.full_name || '-' }}</td>
+                <td class="py-3 text-center">
+                  <button
+                    @click="openEdit(item)"
+                    class="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800"
+                  >
+                    <i class="fa-solid fa-pen-to-square text-[10px]"></i>
+                    แก้ไข
+                  </button>
+                </td>
               </tr>
               <tr v-if="!pendingImports.length">
-                <td colspan="6" class="py-8 text-center text-slate-400">ไม่มีรายการรอตรวจสอบ</td>
+                <td colspan="8" class="py-8 text-center text-slate-400">ไม่มีรายการรอตรวจสอบ</td>
               </tr>
             </tbody>
           </table>

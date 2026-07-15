@@ -1634,7 +1634,7 @@ const exportDashboardPdf = async () => {
 
       <!-- Top Diagnosis -->
       <div 
-        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/10 transition-all group relative z-30 pointer-events-auto"
+        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-rose-50/50 dark:hover:bg-rose-900/10 transition-all group relative z-30 pointer-events-auto"
         @click="openDiagDetails(summary.topDiagnosis.name)"
       >
         <div class="flex items-center justify-between">
@@ -1663,7 +1663,7 @@ const exportDashboardPdf = async () => {
 
       <!-- Dispensed -->
       <div 
-        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-900/10 transition-all group relative z-30 pointer-events-auto"
+        class="bg-white dark:bg-slate-800 border border-clinic-border dark:border-slate-700 rounded-xl p-4 flex flex-col gap-2 shadow-sm cursor-pointer hover:bg-orange-50/50 dark:hover:bg-orange-900/10 transition-all group relative z-30 pointer-events-auto"
         @click="openDispensedDetails"
       >
         <div class="flex items-center justify-between">
